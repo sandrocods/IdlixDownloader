@@ -7,6 +7,7 @@
 # If you want to be appreciated by others, then don't change anything in this script.
 # Please respect me for making this tool from the beginning.
 ##
+import os
 
 import m3u8
 import requests
@@ -135,5 +136,6 @@ class IdlixDownloader:
         m3u8_To_MP4.multithread_download(
             m3u8_uri=uri,
             max_num_workers=10,
-            mp4_file_name=self.name_video + '.mp4'
+            mp4_file_name=self.name_video + '.mp4',
+            mp4_file_dir= os.getcwd() + '/'
         )
