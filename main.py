@@ -82,7 +82,16 @@ def main():
 
 if __name__ == '__main__':
     # set path environment variable
-    subprocess.call(["setx", "PATH", "%PATH%;" + os.path.dirname(os.path.abspath(__file__)) + ""])
+    temp_path = []
+    for k, v in os.environ.items():
+        temp_path.append(v)
+
+    for data_temp in temp_path:
+        if data_temp == os.path.dirname(os.path.realpath(__file__)):
+            print("[!] [INFO] Path FFMPEG already set in : " + data_temp)
+            break
+    else:
+        subprocess.call(["setx", "PATH", "%PATH%;" + os.path.dirname(os.path.abspath(__file__)) + ""])
 
     if exists(os.path.dirname(os.path.abspath(__file__)) + "\\ffmpeg.exe"):
         os.system("copy ffmpeg.exe " + os.path.dirname(os.path.abspath(__file__)) + "\\output\\ffmpeg.exe")
