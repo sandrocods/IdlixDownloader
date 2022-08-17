@@ -2,66 +2,85 @@
 # Author  : Sandroputraa
 # Name    : Idlix Downloader
 # Build   : 12-08-2022
+# Update  : 17-08-2022
 #
 # If you are a reliable programmer or the best developer, please don't change anything.
 # If you want to be appreciated by others, then don't change anything in this script.
 # Please respect me for making this tool from the beginning.
 ##
-
+import os
 import datetime
-from prettytable import PrettyTable
+from InquirerPy import inquirer
 from src.IdlixDownloader import IdlixDownloader
 from colorama import Fore, init
 
-init(autoreset=True)
 
-print(Fore.GREEN + """
-  ___ ___  _    _____  __
- |_ _|   \| |  |_ _\ \/ /
-  | || |) | |__ | | >  < 
- |___|___/|____|___/_/\_\ \n
-Video Downloader - Make with ❤️️ by @sandro.putraa
- """)
+def main():
+    init(autoreset=True)
+    print(Fore.GREEN + """
+      ___ ___  _    _____  __
+     |_ _|   \| |  |_ _\ \/ /
+      | || |) | |__ | | >  < 
+     |___|___/|____|___/_/\_\ \n
+    Video Downloader - Make with ❤️️ by @sandro.putraa
+     """)
+    try:
+        os.system("title Idlix Video Downloader - Make with ❤️️by @sandro.putraa")
+        video_url = input('Enter video url : ')
 
-video_url = input('Enter video url : ')
+        idlix = IdlixDownloader(video_url)
 
-idlix = IdlixDownloader(video_url)
+        if idlix.get_video_data()['status']:
+            print(Fore.GREEN + "[" + datetime.datetime.now().strftime(
+                "%Y-%m-%d %H:%M:%S") + "] " + Fore.WHITE + "Get Video " + Fore.LIGHTYELLOW_EX + " [ " + idlix.name_video.replace(
+                "-", " ") + " ] " + Fore.GREEN + " Success")
+            print(Fore.GREEN + "[" + datetime.datetime.now().strftime(
+                "%Y-%m-%d %H:%M:%S") + "] " + Fore.WHITE + "Video Type" + Fore.LIGHTYELLOW_EX + " [ " + idlix.video_type + " ]")
 
-if idlix.get_video_data()['status']:
-    print(Fore.GREEN + "[" + datetime.datetime.now().strftime(
-        "%Y-%m-%d %H:%M:%S") + "] " + Fore.WHITE + "Get Video " + Fore.LIGHTYELLOW_EX + " [ " + idlix.name_video.replace(
-        "-", " ") + " ] " + Fore.GREEN + " Success")
-    print(Fore.GREEN + "[" + datetime.datetime.now().strftime(
-        "%Y-%m-%d %H:%M:%S") + "] " + Fore.WHITE + "Video Type " + Fore.LIGHTYELLOW_EX + " [ " + idlix.video_type + " ]")
+            if idlix.get_embed_url()['status']:
 
-    if idlix.get_embed_url()['status']:
+                if idlix.get_video()['status']:
 
-        if idlix.get_video()['status']:
+                    if idlix.get_m3u8()['status']:
 
-            if idlix.get_m3u8()['status']:
-                t = PrettyTable(title="Select Video Quality", field_names=['No', 'Name Video', 'Resolution'])
-                for i, play in enumerate(idlix.get_m3u8()['data']):
-                    t.add_row([str(i), str(idlix.name_video), play['resolution']])
-                print(t)
-                while True:
-                    try:
-                        choice = int(input("Enter your choice : "))
-                        if choice < len(idlix.get_m3u8()['data']):
-                            break
-                        else:
-                            print("Invalid choice")
-                    except Exception as e:
-                        print(e)
-                        print("Invalid choice")
+                        data_video_tmp = []
+                        for i, play in enumerate(idlix.get_m3u8()['data']):
+                            data_video_tmp.append(play['resolution'])
 
-                idlix.download_video(idlix.get_m3u8()['data'][choice]['uri'])
+                        qualityVideo = inquirer.select(
+                            message="Select Quality Video : ",
+                            choices=data_video_tmp,
 
+                        ).execute()
+
+                        for data in idlix.get_m3u8()['data']:
+                            if data['resolution'] == qualityVideo:
+                                os.system("title Downloading Video " + idlix.name_video.replace("-", " "))
+                                idlix.download_video(data['uri'])
+                                os.system("cls")
+                                main()
+
+                    else:
+                        print("Error get m3u8")
+                        exit()
+                else:
+                    print('Error getting video')
+                    exit()
             else:
-                print("Error get m3u8")
+                print("Embed url not found")
+                exit()
         else:
-            print('Error getting video')
-    else:
-        print("Embed url not found")
-else:
-    print('Video not found')
-    exit()
+            print('Video not found')
+            exit()
+
+    except IndexError:
+        print('Enter Valid Video Url')
+        exit()
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except KeyboardInterrupt:
+        print('\nExit')
+        exit()

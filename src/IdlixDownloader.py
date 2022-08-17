@@ -2,16 +2,18 @@
 # Author  : Sandroputraa
 # Name    : Idlix Downloader
 # Build   : 12-08-2022
+# Update  : 17-08-2022
 #
 # If you are a reliable programmer or the best developer, please don't change anything.
 # If you want to be appreciated by others, then don't change anything in this script.
 # Please respect me for making this tool from the beginning.
 ##
 import os
-
 import m3u8
+import shutil
 import requests
 import m3u8_To_MP4
+from os.path import exists
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 
@@ -77,7 +79,6 @@ class IdlixDownloader:
                 'data': data_video
             }
         except Exception as e:
-            print(e)
             return {
                 'status': False,
             }
@@ -133,9 +134,18 @@ class IdlixDownloader:
             }
 
     def download_video(self, uri):
+
+        if exists(os.getcwd() + '/tmp/'):
+            pass
+        else:
+            os.mkdir(os.getcwd() + '/tmp/')
+
         m3u8_To_MP4.multithread_download(
             m3u8_uri=uri,
             max_num_workers=10,
-            mp4_file_name=self.name_video + '.mp4',
-            mp4_file_dir= os.getcwd() + '/'
+            mp4_file_name=self.name_video,
+            mp4_file_dir=os.getcwd() + '/',
+            tmpdir=os.getcwd() + '/tmp/'
         )
+
+        shutil.rmtree(os.getcwd() + '/tmp/', ignore_errors=True)
