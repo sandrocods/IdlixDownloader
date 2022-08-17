@@ -81,8 +81,7 @@ def main():
 
 if __name__ == '__main__':
     # set path environment variable
-    subprocess.run(["setx", "PATH", "%PATH%;" + os.path.dirname(os.path.abspath(__file__)) + "\\"], shell=True)
-
+    subprocess.call(["setx", "PATH", "%PATH%;" + os.path.dirname(os.path.abspath(__file__)) + ""])
     try:
         main()
     except KeyboardInterrupt:
