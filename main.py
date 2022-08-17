@@ -9,6 +9,7 @@
 # Please respect me for making this tool from the beginning.
 ##
 import os
+from os.path import exists
 import datetime
 import subprocess
 from InquirerPy import inquirer
@@ -82,6 +83,10 @@ def main():
 if __name__ == '__main__':
     # set path environment variable
     subprocess.call(["setx", "PATH", "%PATH%;" + os.path.dirname(os.path.abspath(__file__)) + ""])
+
+    if exists(os.path.dirname(os.path.abspath(__file__)) + "\\ffmpeg.exe"):
+        os.system("copy ffmpeg.exe " + os.path.dirname(os.path.abspath(__file__)) + "\\output\\ffmpeg.exe")
+
     try:
         main()
     except KeyboardInterrupt:
