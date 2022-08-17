@@ -10,6 +10,7 @@
 ##
 import os
 import datetime
+import subprocess
 from InquirerPy import inquirer
 from src.IdlixDownloader import IdlixDownloader
 from colorama import Fore, init
@@ -79,6 +80,9 @@ def main():
 
 
 if __name__ == '__main__':
+    # set path environment variable
+    subprocess.run(["setx", "PATH", "%PATH%;" + os.path.dirname(os.path.abspath(__file__)) + "\\"], shell=True)
+
     try:
         main()
     except KeyboardInterrupt:
