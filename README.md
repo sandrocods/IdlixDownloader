@@ -80,3 +80,8 @@ Menjalankan Program
 #### ❗️ File video yang telah di download berada di folder IdlixDownloader sesuai dengan nama video 
 
 ![app](https://i.ibb.co/ZLSn3qL/image.png)
+
+#### Video Demo
+https://user-images.githubusercontent.com/59155826/185171740-2506a619-74a1-46e4-9628-bb15355c145e.mp4
+
+
