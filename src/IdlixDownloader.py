@@ -2,7 +2,7 @@
 # Author  : Sandroputraa
 # Name    : Idlix Downloader
 # Build   : 12-08-2022
-# Update  : 17-08-2022
+# Update  : 08-09-2022
 #
 # If you are a reliable programmer or the best developer, please don't change anything.
 # If you want to be appreciated by others, then don't change anything in this script.
@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 
 API = {
     'v1': 'https://94.103.82.88/',
+    'v1_update' : 'https://195.2.92.213/',
     'v2': 'https://jeniusplay.com/'
 }
 
@@ -85,7 +86,7 @@ class IdlixDownloader:
 
     def get_embed_url(self):
         request = requests.post(
-            url=API['v1'] + 'wp-admin/admin-ajax.php',
+            url=API['v1_update'] + 'wp-admin/admin-ajax.php',
             data="action=doo_player_ajax&post=" + str(self.video_id) + "&nume=1&type=" + str(self.video_type),
             headers={
                 "Host": "94.103.82.88",
