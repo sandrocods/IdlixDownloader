@@ -30,7 +30,10 @@ def main():
         os.system("title Idlix Video Downloader - Make with ❤️️by @sandro.putraa")
         video_url = input('Enter video url : ')
 
-        idlix = IdlixDownloader(video_url)
+        idlix = IdlixDownloader(
+            url=video_url,
+            worker=10
+        )
 
         if idlix.get_video_data()['status']:
             print(Fore.GREEN + "[" + datetime.datetime.now().strftime(
@@ -87,7 +90,7 @@ if __name__ == '__main__':
         temp_path.append(v)
 
     for data_temp in temp_path:
-        if data_temp == os.path.dirname(os.path.realpath(__file__)):
+        if data_temp in os.path.dirname(os.path.realpath(__file__)):
             print("[!] [INFO] Path FFMPEG already set in : " + data_temp)
             break
     else:
