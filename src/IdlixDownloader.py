@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 # DEBUG
 # from requests_toolbelt.utils import dump
 
+
 API = {
     'v1': 'https://94.103.82.88/',
     'v2': 'https://jeniusplay.com/',
@@ -45,7 +46,7 @@ STATIC_HEADER_2 = {
 
 class IdlixDownloader:
 
-    def __init__(self, url, worker = 10):
+    def __init__(self, url, worker=10, log=False):
         self.uri = None
         self.data = None
         self.video_type = None
@@ -54,11 +55,24 @@ class IdlixDownloader:
         self.worker = worker
         self.name_video = urlparse(url).path.split('/')[2]
 
+        if log:
+            import logging
+            logging.basicConfig(
+                level=logging.BASIC_FORMAT,
+                format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            )
+            self.logging = logging
+        else:
+            self.logging = None
+
     def get_video_data(self):
         """
         It gets the video id and type from the page's html
         :return: A dictionary with the status of the request, the video id, and the video type.
         """
+        self.logging.info('Getting video data...')
+        self.logging.info('Requesting page...')
+
         request = requests.get(
             url=self.url,
             headers=STATIC_HEADER_1
@@ -68,6 +82,11 @@ class IdlixDownloader:
                 .find('li', {'class': 'dooplay_player_option'}).get('data-post')
             self.video_type = BeautifulSoup(request.text, 'html.parser') \
                 .find('li', {'class': 'dooplay_player_option'}).get('data-type')
+
+            self.logging.info('Video ID: ' + self.video_id)
+            self.logging.info('Video Type: ' + self.video_type)
+            self.logging.info('Video data successfully obtained.')
+
             return {
                 'status': True,
                 'video_id': self.video_id,
@@ -83,6 +102,7 @@ class IdlixDownloader:
         It takes a URI, and returns a list of dictionaries containing the URI and resolution of each playlist
         :return: A dictionary with a key of status and a value of True.
         """
+        self.logging.info('Getting m3u8...')
         try:
             playlist = m3u8.load(
                 uri=self.uri,
@@ -94,11 +114,13 @@ class IdlixDownloader:
                     'uri': playlist.uri,
                     'resolution': playlist.stream_info.resolution.__str__(),
                 })
+            self.logging.info('M3u8 successfully obtained.')
             return {
                 'status': True,
                 'data': data_video
             }
         except Exception as e:
+            self.logging.error(e)
             return {
                 'msg_error': str(e),
                 'status': False,
@@ -109,6 +131,7 @@ class IdlixDownloader:
         It takes a video id and a video type, and returns a dictionary with the embed url and video id
         :return: A dictionary with the status of the request, the embed_url and the video_id.
         """
+        self.logging.info('Getting embed url...')
         STATIC_HEADER_1.update(
             {
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -122,12 +145,16 @@ class IdlixDownloader:
         )
         if request.json()['embed_url']:
             self.data = urlparse(request.json()['embed_url']).path.split('/')[-1]
+            self.logging.info('Embed url successfully obtained.')
+
             return {
                 'status': True,
                 'embed_url': request.json()['embed_url'],
                 'video_id': urlparse(request.json()['embed_url']).path.split('/')[-1]
             }
         else:
+
+            self.logging.error('Error getting embed url.')
             return {
                 'status': False,
             }
@@ -138,6 +165,7 @@ class IdlixDownloader:
         if the video is available
         :return: A dictionary with a status key and a videoSource key.
         """
+        self.logging.info('Getting video...')
         STATIC_HEADER_2.update(
             {
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -151,12 +179,13 @@ class IdlixDownloader:
         )
         if request.json()['hls']:
             self.uri = request.json()['videoSource']
-
+            self.logging.info('Video successfully obtained.')
             return {
                 'status': True,
                 'videoSource': request.json()['videoSource']
             }
         else:
+            self.logging.error('Error getting video.')
             return {
                 'status': False,
             }
@@ -173,6 +202,7 @@ class IdlixDownloader:
         else:
             os.mkdir(os.getcwd() + '/tmp/')
 
+        self.logging.info('Downloading video...')
         m3u8_To_MP4.multithread_download(
             m3u8_uri=uri,
             max_num_workers=self.worker,

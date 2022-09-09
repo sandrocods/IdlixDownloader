@@ -32,7 +32,8 @@ def main():
 
         idlix = IdlixDownloader(
             url=video_url,
-            worker=10
+            worker=10,
+            log=False
         )
 
         if idlix.get_video_data()['status']:
@@ -59,6 +60,7 @@ def main():
                         ).execute()
 
                         for data in idlix.get_m3u8()['data']:
+
                             if data['resolution'] == qualityVideo:
                                 os.system("title Downloading Video " + idlix.name_video.replace("-", " "))
                                 idlix.download_video(data['uri'])
@@ -89,15 +91,18 @@ if __name__ == '__main__':
     for k, v in os.environ.items():
         temp_path.append(v)
 
-    for data_temp in temp_path:
-        if data_temp in os.path.dirname(os.path.realpath(__file__)):
-            print("[!] [INFO] Path FFMPEG already set in : " + data_temp)
-            break
+    if os.path.dirname(os.path.realpath(__file__)) in temp_path:
+        print("[!] [INFO] Path FFMPEG already set ")
     else:
         subprocess.call(["setx", "PATH", "%PATH%;" + os.path.dirname(os.path.abspath(__file__)) + ""])
 
-    if exists(os.path.dirname(os.path.abspath(__file__)) + "\\ffmpeg.exe"):
-        os.system("copy ffmpeg.exe " + os.path.dirname(os.path.abspath(__file__)) + "\\output\\ffmpeg.exe")
+    if exists(os.path.dirname(os.path.realpath(__file__)) + "/ffmpeg.exe"):
+        print("[!] [INFO] FFMPEG already installed ")
+    else:
+        print("[!] [INFO] FFMPEG not installed ")
+        print("[!] [INFO] Copying FFMPEG ")
+        if exists(os.path.dirname(os.path.abspath(__file__)) + "\\ffmpeg.exe"):
+            os.system("copy ffmpeg.exe " + os.path.dirname(os.path.abspath(__file__)) + "\\output\\ffmpeg.exe")
 
     try:
         main()
