@@ -33,7 +33,7 @@ def main():
         idlix = IdlixDownloader(
             url=video_url,
             worker=10,
-            log=False
+
         )
 
         if idlix.get_video_data()['status']:
