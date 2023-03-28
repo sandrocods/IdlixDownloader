@@ -2,7 +2,7 @@
 # Author  : Sandroputraa
 # Name    : Idlix Downloader
 # Build   : 12-08-2022
-# Update  : 09-09-2022
+# Update  : 03-28-2023
 #
 # If you are a reliable programmer or the best developer, please don't change anything.
 # If you want to be appreciated by others, then don't change anything in this script.
@@ -23,18 +23,18 @@ from urllib.parse import urlparse
 
 
 API = {
-    'v1': 'https://94.103.82.88/',
+    'v1': 'https://46.149.79.15/',
     'v2': 'https://jeniusplay.com/',
-    'v1_update': 'https://195.2.92.213/'
+    'v1_update': 'https://46.149.79.15/'
 }
 
 STATIC_HEADER_1 = {
-    "Host": "94.103.82.88",
+    "Host": "46.149.79.15",
     "Connection": "keep-alive",
     "Upgrade-Insecure-Requests": "1",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
-    "Referer": "https://94.103.82.88/",
+    "Referer": "https://46.149.79.15/",
 }
 
 STATIC_HEADER_2 = {
@@ -148,7 +148,7 @@ class IdlixDownloader:
         )
         request = requests.post(
             url=API['v2'] + 'player/index.php?data=' + str(self.data) + '&do=getVideo',
-            data="hash=" + str(self.data) + "&r=https%3A%2F%2F94.103.82.88%2F",
+            data="hash=" + str(self.data) + "&r=https%3A%2F%2F{api}%2F".format(api=API['v1'].split('/')[2]),
             headers=STATIC_HEADER_2
         )
         if request.json()['hls']:
