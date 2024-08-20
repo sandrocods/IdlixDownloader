@@ -40,6 +40,23 @@ Berikut ini adalah cara installasi program versi windows
   pip3 install -r requirements.txt
 ```
 
+## Penggunaan
+Untuk menggunakan program ini, ikuti langkah-langkah berikut:
+
+##### 1. Jalankan program
+```bash
+  python3 main.py
+```
+
+##### 2. Pilih menu yang tersedia
+```bash
+  1. Download Featured Movie
+  2. Play Featured Movie
+  3. Download Movie by URL
+  4. Play Movie by URL
+  5. Exit
+```
+
 #### ❗ Note 
 ```
 Program ini akan otomatis mendownload file ( ffmpeg-x.x.x-essentials_build ) berbasis windows yang akan digunakan untuk mendownload dan melakukan pemutaran video secara otomatis
