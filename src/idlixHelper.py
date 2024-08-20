@@ -78,8 +78,9 @@ class IdlixHelper:
                 except Exception as e:
                     print(f'Error: {e}')
         else:
-            logger.error('FFMPEG not found, please install ffmpeg first before running this script "sudo apt install ffmpeg"')
-            exit()
+            if not shutil.which('ffmpeg'):
+                logger.error('FFMPEG not found, please install ffmpeg first before running this script')
+                exit()
 
     @staticmethod
     def download_ffmpeg():
