@@ -62,7 +62,24 @@ while not status_exit:
                     get_m3u8_url = idlix_helper.get_m3u8_url()
                     if get_m3u8_url['status']:
                         logger.info("Getting m3u8 url | M3U8 URL : " + get_m3u8_url['m3u8_url'])
-
+                        if get_m3u8_url['is_variant_playlist']:
+                            logger.warning("This video has variant playlist")
+                            question = [
+                                inquirer.List(
+                                    "variant",
+                                    message="Select variant",
+                                    choices=[str(i.get('id')) + "." + str(i.get('resolution')) for i in get_m3u8_url['variant_playlist']],
+                                    carousel=True
+                                )
+                            ]
+                            answer = inquirer.prompt(question)
+                            for variant in get_m3u8_url['variant_playlist']:
+                                if variant['id'] == answer['variant'].split(".")[0]:
+                                    logger.success("Selected variant : " + variant['resolution'])
+                                    idlix_helper.set_m3u8_url(variant['uri'])
+                                    break
+                        else:
+                            logger.warning("This video has no variant playlist")
                         download_m3u8 = idlix_helper.download_m3u8()
                         if download_m3u8['status']:
                             logger.success("Downloading {} Success".format(get_video_data['video_name']))
@@ -88,6 +105,24 @@ while not status_exit:
                     get_m3u8_url = idlix_helper.get_m3u8_url()
                     if get_m3u8_url['status']:
                         logger.info("Getting m3u8 url | M3U8 URL : " + get_m3u8_url['m3u8_url'])
+                        if get_m3u8_url['is_variant_playlist']:
+                            logger.warning("This video has variant playlist")
+                            question = [
+                                inquirer.List(
+                                    "variant",
+                                    message="Select variant",
+                                    choices=[str(i.get('id')) + "." + str(i.get('resolution')) for i in get_m3u8_url['variant_playlist']],
+                                    carousel=True
+                                )
+                            ]
+                            answer = inquirer.prompt(question)
+                            for variant in get_m3u8_url['variant_playlist']:
+                                if variant['id'] == answer['variant'].split(".")[0]:
+                                    logger.success("Selected variant : " + variant['resolution'])
+                                    idlix_helper.set_m3u8_url(variant['uri'])
+                                    break
+                        else:
+                            logger.warning("This video has no variant playlist")
 
                         download_m3u8 = idlix_helper.download_m3u8()
                         if download_m3u8['status']:
@@ -122,6 +157,31 @@ while not status_exit:
                     get_m3u8_url = idlix_helper.get_m3u8_url()
                     if get_m3u8_url['status']:
                         logger.info("Getting m3u8 url | M3U8 URL : " + get_m3u8_url['m3u8_url'])
+                        if get_m3u8_url['is_variant_playlist']:
+                            logger.warning("This video has variant playlist")
+                            question = [
+                                inquirer.List(
+                                    "variant",
+                                    message="Select variant",
+                                    choices=[str(i.get('id')) + "." + str(i.get('resolution')) for i in get_m3u8_url['variant_playlist']],
+                                    carousel=True
+                                )
+                            ]
+                            answer = inquirer.prompt(question)
+                            for variant in get_m3u8_url['variant_playlist']:
+                                if variant.get('id') == answer['variant'].split(".")[0]:
+                                    logger.success("Selected variant : " + variant.get('resolution'))
+                                    idlix_helper.set_m3u8_url(variant.get('uri'))
+                                    break
+                        else:
+                            logger.warning("This video has no variant playlist")
+
+                        download_subtitle = idlix_helper.get_subtitle()
+                        if download_subtitle['status']:
+                            logger.success("Download subtitle success")
+                        else:
+                            logger.error("Error download subtitle")
+
                         play_m3u8 = idlix_helper.play_m3u8()
                         if play_m3u8['status']:
                             logger.success("Playing {} Success".format(get_video_data['video_name']))
@@ -147,6 +207,31 @@ while not status_exit:
                     get_m3u8_url = idlix_helper.get_m3u8_url()
                     if get_m3u8_url['status']:
                         logger.info("Getting m3u8 url | M3U8 URL : " + get_m3u8_url['m3u8_url'])
+                        if get_m3u8_url['is_variant_playlist']:
+                            logger.warning("This video has variant playlist")
+                            question = [
+                                inquirer.List(
+                                    "variant",
+                                    message="Select variant",
+                                    choices=[str(i.get('id')) + "." + str(i.get('resolution')) for i in get_m3u8_url['variant_playlist']],
+                                    carousel=True
+                                )
+                            ]
+                            answer = inquirer.prompt(question)
+                            for variant in get_m3u8_url['variant_playlist']:
+                                if variant.get('id') == answer['variant'].split(".")[0]:
+                                    logger.success("Selected variant : " + variant.get('resolution'))
+                                    idlix_helper.set_m3u8_url(variant.get('uri'))
+                                    break
+                        else:
+                            logger.warning("This video has no variant playlist")
+
+                        download_subtitle = idlix_helper.get_subtitle()
+                        if download_subtitle['status']:
+                            logger.success("Download subtitle success")
+                        else:
+                            logger.error("Error download subtitle")
+
                         play_m3u8 = idlix_helper.play_m3u8()
                         if play_m3u8['status']:
                             logger.success("Playing {} Success".format(get_video_data['video_name']))

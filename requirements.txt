@@ -47,6 +47,7 @@ soupsieve==2.3.2.post1
 texttable==1.6.4
 tqdm==4.64.1
 urllib3==1.26.11
+vtt_to_srt3==0.2.0.3
 wcwidth==0.2.5
 Werkzeug==2.2.3
 win32-setctime==1.1.0

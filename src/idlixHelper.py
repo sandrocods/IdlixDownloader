@@ -5,7 +5,9 @@ Update  :   21-08-2024
 Author  :   sandroputraa
 """
 import os
+import re
 import json
+import m3u8
 import shutil
 import zipfile
 import requests
@@ -14,6 +16,7 @@ import m3u8_To_MP4
 from loguru import logger
 from bs4 import BeautifulSoup
 from urllib.parse import unquote, urlparse
+from vtt_to_srt.vtt_to_srt import ConvertFile
 from curl_cffi import requests as cffi_requests
 from src.CryptoJsAesHelper import CryptoJsAes, dec
 
@@ -43,6 +46,8 @@ class IdlixHelper:
         self.video_id = None
         self.embed_url = None
         self.video_name = None
+        self.is_subtitle = None
+        self.variant_playlist = None
         self.request = cffi_requests.Session(
             impersonate="chrome",
             headers=self.BASE_STATIC_HEADERS
@@ -217,7 +222,6 @@ class IdlixHelper:
                 'message': 'Embed URL is required'
             }
 
-
         if '/video/' in urlparse(self.embed_url).path:
             self.embed_url = urlparse(self.embed_url).path.split('/')[2]
         elif urlparse(self.embed_url).query.split('=')[1]:
@@ -244,9 +248,23 @@ class IdlixHelper:
 
             if request.status_code == 200 and request.json().get('videoSource'):
                 self.m3u8_url = request.json().get('videoSource')
+                self.variant_playlist = m3u8.load(self.m3u8_url)
+                tmp_variant_playlist = []
+                id = 0
+                for playlist in self.variant_playlist.playlists:
+                    tmp_variant_playlist.append({
+                        'bandwidth': playlist.stream_info.bandwidth,
+                        'resolution': str(playlist.stream_info.resolution[0]) + 'x' + str(playlist.stream_info.resolution[1]),
+                        'uri': playlist.uri,
+                        'id': str(id)
+                    })
+                    id += 1
+                is_variant_playlist = True if len(tmp_variant_playlist) > 1 else False
                 return {
                     'status': True,
-                    'm3u8_url': self.m3u8_url
+                    'm3u8_url': self.m3u8_url,
+                    'variant_playlist': tmp_variant_playlist,
+                    'is_variant_playlist': is_variant_playlist
                 }
             else:
                 return {
@@ -258,6 +276,9 @@ class IdlixHelper:
                 'status': False,
                 'message': str(error_get_m3u8_url)
             }
+
+    def set_m3u8_url(self, m3u8_url):
+        self.m3u8_url = m3u8_url
 
     def download_m3u8(self):
         try:
@@ -288,6 +309,63 @@ class IdlixHelper:
                 'message': str(error_download_m3u8)
             }
 
+    def get_subtitle(self, download=True):
+        try:
+            if not self.embed_url:
+                return {
+                    'status': False,
+                    'message': 'Embed URL is required'
+                }
+
+            request = cffi_requests.post(
+                url='https://jeniusplay.com/player/index.php',
+                params={
+                    "data": self.embed_url,
+                    "do": "getVideo"
+                },
+                headers={
+                    "Host": "jeniusplay.com",
+                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                },
+                data={
+                    "hash": self.embed_url,
+                    "r": "https://vip.idlixofficialx.net/"
+                },
+                impersonate="chrome",
+
+            )
+            regex_subtitle = re.search(r"var playerjsSubtitle = \"(.*)\";", request.text)
+            if regex_subtitle:
+                if download:
+                    subtitle_request = requests.get(
+                        url="https://" + regex_subtitle.group(1).split("https://")[1],
+                    )
+                    with open(self.video_name.replace(" ", "_") + '.vtt', 'wb') as subtitle_file:
+                        subtitle_file.write(subtitle_request.content)
+                    self.convert_vtt_to_srt(self.video_name.replace(" ", "_") + '.vtt')
+                    self.is_subtitle = True
+                    return {
+                        'status': True,
+                        'subtitle': self.video_name.replace(" ", "_") + '.srt',
+                    }
+
+                self.is_subtitle = True
+                return {
+                    'status': True,
+                    'subtitle': "https://" + regex_subtitle.group(1).split("https://")[1]
+                }
+            else:
+                self.is_subtitle = False
+                return {
+                    'status': False,
+                    'message': 'Subtitle not found'
+                }
+        except Exception as error_get_subtitle:
+            return {
+                'status': False,
+                'message': str(error_get_subtitle)
+            }
+
     def play_m3u8(self):
         try:
             if not self.m3u8_url:
@@ -295,6 +373,21 @@ class IdlixHelper:
                     'status': False,
                     'message': 'M3U8 URL is required'
                 }
+
+            if self.is_subtitle:
+                subprocess.call([
+                    "ffplay",
+                    "-i",
+                    self.m3u8_url,
+                    "-window_title",
+                    self.video_name,
+                    "-vf",
+                    "subtitles=" + self.video_name.replace(" ", "_") + ".srt",
+                    "-hide_banner",
+                    "-loglevel",
+                    "panic"
+                ])
+
             subprocess.call([
                 "ffplay",
                 "-i",
@@ -304,8 +397,12 @@ class IdlixHelper:
                 "-hide_banner",
                 "-loglevel",
                 "panic"
-
             ])
+
+            if self.is_subtitle and os.path.exists(self.video_name.replace(" ", "_") + '.srt'):
+                os.remove(self.video_name.replace(" ", "_") + '.srt')
+                os.remove(self.video_name.replace(" ", "_") + '.vtt')
+
             return {
                 'status': True,
                 'message': 'Playing m3u8'
@@ -315,3 +412,8 @@ class IdlixHelper:
                 'status': False,
                 'message': str(error_play_m3u8)
             }
+
+    @staticmethod
+    def convert_vtt_to_srt(vtt_file):
+        convert_file = ConvertFile(vtt_file, "utf-8")
+        convert_file.convert()
