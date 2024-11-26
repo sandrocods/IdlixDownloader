@@ -1,5 +1,7 @@
 # IDLIX CLI Video Downloader & Video Player
 
+![image](https://github.com/user-attachments/assets/6f1d736a-c8c8-4af2-9f32-4735dbec45c4)
+
 IDLIX CLI Video Downloader & Video Player adalah program berbasis command-line interface (CLI) yang dirancang untuk mengunduh dan memutar video dari platform IDLIX dengan efisien. program ini memungkinkan pengguna untuk
 berinteraksi langsung dengan platform IDLIX, sehingga mereka dapat mengunduh video sesuai dengan preferensi link atau featured movie. Setelah diunduh video dapat diputar dengan lancar menggunakan bantuan FFmpeg / FFplay
 
