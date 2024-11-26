@@ -97,6 +97,102 @@ dan akan melakukan ekstraksi file tersebut ke dalam folder src/ffmpeg, setelah i
 
 - Menambahkan type tvseries / episode
 
+# Changelog
+
+<details>
+<summary><strong>2024-11-27</strong></summary>
+
+### Updated
+
+- Updated API for new server changes.
+
+</details>
+
+<details>
+<summary><strong>2024-08-21</strong></summary>
+
+### Added
+
+- Added `README.md`.
+- Added `requirements.txt`.
+- Added project screenshots.
+
+### Updated
+
+- Updated resolution and subtitle handling.
+- Updated helper scripts for Linux.
+- Optimized various aspects of the project.
+- Updated `README.md` with new details.
+
+</details>
+
+<details>
+<summary><strong>2023-03-28</strong></summary>
+
+### Updated
+
+- General update with changes and improvements.
+
+</details>
+
+<details>
+<summary><strong>2022-09-09</strong></summary>
+
+### Added
+
+- Added worker threads for better concurrency.
+
+### Updated
+
+- Cleaned code for better readability ✨.
+- Improved logging functionality.
+
+### Removed
+
+- Deleted logging in certain areas to streamline performance.
+
+</details>
+
+<details>
+<summary><strong>2022-09-08</strong></summary>
+
+### Fixed
+
+- Fixed API updates during the download process.
+
+</details>
+
+<details>
+<summary><strong>2022-08-17</strong></summary>
+
+### Added
+
+- Added `ffmpeg` integration.
+- Added tutorial images for better guidance.
+
+### Fixed
+
+- Fixed `.exe` file issues.
+- Fixed issues with `ffmpeg` directory handling.
+
+### Updated
+
+- Updated `README.md` with more comprehensive information.
+- Updated and improved overall code quality.
+
+</details>
+
+<details>
+<summary><strong>2022-08-12</strong></summary>
+
+### Added
+
+- Initial project commit.
+- Created the first version of `README.md`.
+- Added tutorial images for initial guidance.
+
+</details>
+
 ## Note
 
 Program ini dibuat untuk keperluan pembelajaran semata, segala bentuk penyalahgunaan diluar tanggung jawab pembuat program ini

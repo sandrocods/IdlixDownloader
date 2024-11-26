@@ -1,10 +1,11 @@
 """
 Helper Class for IDLIX Downloader & IDLIX Player CLI
 
-Update  :   21-08-2024
+Update  :   27-11-2024
 Author  :   sandroputraa
 """
 import os
+import random
 import re
 import json
 import m3u8
@@ -22,9 +23,9 @@ from src.CryptoJsAesHelper import CryptoJsAes, dec
 
 
 class IdlixHelper:
-    BASE_WEB_URL = "https://vip.idlixofficialx.net/"
+    BASE_WEB_URL = "https://tv2.idlix.asia/"
     BASE_STATIC_HEADERS = {
-        "Host": "vip.idlixofficialx.net",
+        "Host": "tv2.idlix.asia",
         "Connection": "keep-alive",
         "sec-ch-ua": "Not)A;Brand;v=99, Google Chrome;v=127, Chromium;v=127",
         "sec-ch-ua-mobile": "?0",
@@ -36,7 +37,7 @@ class IdlixHelper:
         "Sec-Fetch-Mode": "navigate",
         "Sec-Fetch-User": "?1",
         "Sec-Fetch-Dest": "document",
-        "Referer": "https://vip.idlixofficialx.net/",
+        "Referer": BASE_WEB_URL,
         "Accept-Language": "en-US,en;q=0.9,id;q=0.8"
     }
 
@@ -49,8 +50,9 @@ class IdlixHelper:
         self.is_subtitle = None
         self.variant_playlist = None
         self.request = cffi_requests.Session(
-            impersonate="chrome",
-            headers=self.BASE_STATIC_HEADERS
+            impersonate=random.choice(["chrome124", "chrome119", "chrome104"]),
+            headers=self.BASE_STATIC_HEADERS,
+            debug=False
         )
 
         # FFMPEG
@@ -241,7 +243,7 @@ class IdlixHelper:
                 },
                 data={
                     "hash": self.embed_url,
-                    "r": "https://vip.idlixofficialx.net/"
+                    "r": self.BASE_WEB_URL,
                 },
                 impersonate="chrome",
             )
@@ -276,9 +278,6 @@ class IdlixHelper:
                 'status': False,
                 'message': str(error_get_m3u8_url)
             }
-
-    def set_m3u8_url(self, m3u8_url):
-        self.m3u8_url = m3u8_url
 
     def download_m3u8(self):
         try:
@@ -329,7 +328,7 @@ class IdlixHelper:
                 },
                 data={
                     "hash": self.embed_url,
-                    "r": "https://vip.idlixofficialx.net/"
+                    "r": self.BASE_WEB_URL
                 },
                 impersonate="chrome",
 
@@ -417,3 +416,6 @@ class IdlixHelper:
     def convert_vtt_to_srt(vtt_file):
         convert_file = ConvertFile(vtt_file, "utf-8")
         convert_file.convert()
+
+    def set_m3u8_url(self, m3u8_url):
+        self.m3u8_url = m3u8_url

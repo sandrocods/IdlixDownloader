@@ -58,10 +58,10 @@ while not status_exit:
                 logger.info("Getting video data | Video ID : " + get_video_data['video_id'] + " | Video Name : " + get_video_data['video_name'])
                 get_embed_url = idlix_helper.get_embed_url()
                 if get_embed_url['status']:
-                    logger.info("Getting embed url | Embed URL : " + get_embed_url['embed_url'])
+                    logger.success("Getting embed url | Embed URL : " + get_embed_url['embed_url'])
                     get_m3u8_url = idlix_helper.get_m3u8_url()
                     if get_m3u8_url['status']:
-                        logger.info("Getting m3u8 url | M3U8 URL : " + get_m3u8_url['m3u8_url'])
+                        logger.success("Getting m3u8 url : " + get_m3u8_url['m3u8_url'])
                         if get_m3u8_url['is_variant_playlist']:
                             logger.warning("This video has variant playlist")
                             question = [
@@ -152,11 +152,11 @@ while not status_exit:
 
                 get_embed_url = idlix_helper.get_embed_url()
                 if get_embed_url['status']:
-                    logger.info("Getting embed url | Embed URL : " + get_embed_url['embed_url'])
+                    logger.success("Getting embed url | Embed URL : " + get_embed_url['embed_url'])
 
                     get_m3u8_url = idlix_helper.get_m3u8_url()
                     if get_m3u8_url['status']:
-                        logger.info("Getting m3u8 url | M3U8 URL : " + get_m3u8_url['m3u8_url'])
+                        logger.success("Getting m3u8 url | M3U8 URL : " + get_m3u8_url['m3u8_url'])
                         if get_m3u8_url['is_variant_playlist']:
                             logger.warning("This video has variant playlist")
                             question = [
@@ -195,18 +195,18 @@ while not status_exit:
                 logger.error("Error getting video data")
 
         elif answer['action'] == "Play Movie by URL":
-            url = input("Enter movie URL ( Ex : https://vip.idlixofficialx.net/movie/kung-fu-panda-4-2024/) : ")
+            url = input("Enter movie URL ( Ex : https://tv2.idlix.asia/movie/we-live-in-time-2024/) : ")
             get_video_data = idlix_helper.get_video_data(url)
             if get_video_data['status']:
                 logger.info("Getting video data | Video ID : " + get_video_data['video_id'] + " | Video Name : " + get_video_data['video_name'])
 
                 get_embed_url = idlix_helper.get_embed_url()
                 if get_embed_url['status']:
-                    logger.info("Getting embed url | Embed URL : " + get_embed_url['embed_url'])
+                    logger.success("Getting embed url | Embed URL : " + get_embed_url['embed_url'])
 
                     get_m3u8_url = idlix_helper.get_m3u8_url()
                     if get_m3u8_url['status']:
-                        logger.info("Getting m3u8 url | M3U8 URL : " + get_m3u8_url['m3u8_url'])
+                        logger.success("Getting m3u8 url | M3U8 URL : " + get_m3u8_url['m3u8_url'])
                         if get_m3u8_url['is_variant_playlist']:
                             logger.warning("This video has variant playlist")
                             question = [
