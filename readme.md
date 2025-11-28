@@ -46,7 +46,14 @@ Program mendukung Windows dan Linux.
 
 ------------------------------------------------------------
 
-# Instalasi
+# 🔽 Download (Rekomendasi)
+
+Untuk pengguna Windows **tidak perlu Python**.  
+Cukup download file `.exe` di halaman Release:
+
+👉 https://github.com/sandrocods/IdlixDownloader/releases/latest
+
+# # 🔧 Instalasi dari Source (Opsional)
 
 1. Clone repository:
 git clone https://github.com/sandrocods/IdlixDownloader
