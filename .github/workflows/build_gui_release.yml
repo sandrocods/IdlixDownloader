@@ -27,12 +27,7 @@ jobs:
 
       - name: Build EXE (PyInstaller)
         run: |
-          pyinstaller main_gui.py ^
-            --noconfirm ^
-            --clean ^
-            --onefile ^
-            --windowed ^
-            --name "IdlixDownloaderGUI"
+          pyinstaller main_gui.py --noconfirm --clean --onefile --windowed --name "IdlixDownloaderGUI"
 
       - name: Prepare Release Artifact
         run: |
