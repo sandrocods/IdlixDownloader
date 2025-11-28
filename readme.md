@@ -79,10 +79,10 @@ python main.py
 ------------------------------------------------------------
 
 # Screenshots (GUI Version)
-![](\ss\gui1.jpg)
-![](\ss\gui2.jpg)
-![](\ss\gui3.jpg)
-![](\ss\gui4.jpg)
+![](https://github.com/sandrocods/IdlixDownloader/blob/master/ss/gui1.jpg?raw=true)
+![](https://github.com/sandrocods/IdlixDownloader/blob/master/ss/gui2.jpg?raw=true)
+![](https://github.com/sandrocods/IdlixDownloader/blob/master/ss/gui3.jpg?raw=true)
+![](https://github.com/sandrocods/IdlixDownloader/blob/master/ss/gui4.jpg?raw=true)
 
 ------------------------------------------------------------
 
@@ -103,10 +103,10 @@ Dengan retry logic dan output tabel PrettyTable.
 ------------------------------------------------------------
 
 # Screenshots (CLI Version)
-![](\ss\1.jpg)
-![](\ss\2.jpg)
-![](\ss\3.jpg)
-![](\ss\4.jpg)
+![](https://github.com/sandrocods/IdlixDownloader/blob/master/ss/1.jpg?raw=true)
+![](https://github.com/sandrocods/IdlixDownloader/blob/master/ss/2.jpg?raw=true)
+![](https://github.com/sandrocods/IdlixDownloader/blob/master/ss/3.jpg?raw=true)
+![](https://github.com/sandrocods/IdlixDownloader/blob/master/ss/4.jpg?raw=true)
 
 ------------------------------------------------------------
 
