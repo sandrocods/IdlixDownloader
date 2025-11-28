@@ -1,9 +1,10 @@
 """
 Helper Class for IDLIX Downloader & IDLIX Player CLI
 
-Update  :   27-11-2024
+Update  :   28-11-2025
 Author  :   sandroputraa
 """
+
 import os
 import random
 import re
@@ -23,9 +24,9 @@ from src.CryptoJsAesHelper import CryptoJsAes, dec
 
 
 class IdlixHelper:
-    BASE_WEB_URL = "https://tv2.idlix.asia/"
+    BASE_WEB_URL = "https://tv10.idlixku.com/"
     BASE_STATIC_HEADERS = {
-        "Host": "tv2.idlix.asia",
+        "Host": "tv10.idlixku.com",
         "Connection": "keep-alive",
         "sec-ch-ua": "Not)A;Brand;v=99, Google Chrome;v=127, Chromium;v=127",
         "sec-ch-ua-mobile": "?0",
@@ -52,8 +53,13 @@ class IdlixHelper:
         self.request = cffi_requests.Session(
             impersonate=random.choice(["chrome124", "chrome119", "chrome104"]),
             headers=self.BASE_STATIC_HEADERS,
-            debug=False
+            debug=False,
         )
+
+        # Proxy Example
+        # self.request.proxies = {
+        #    'https': ''
+        # }
 
         # FFMPEG
         if os.name == 'nt':
@@ -115,7 +121,8 @@ class IdlixHelper:
     def get_home(self):
         try:
             request = self.request.get(
-                url=self.BASE_WEB_URL
+                url=self.BASE_WEB_URL,
+                timeout=10
             )
             if request.status_code == 200:
                 bs = BeautifulSoup(request.text, 'html.parser')
@@ -129,7 +136,8 @@ class IdlixHelper:
                         "url": featured.find('a').get('href'),
                         "title": featured.find('h3').text,
                         "year": featured.find('span').text,
-                        "type": featured.find('a').get('href').split('/')[3]
+                        "type": featured.find('a').get('href').split('/')[3],
+                        "poster": featured.find('img').get('src'),
                     })
                 return {
                     'status': True,
@@ -249,7 +257,7 @@ class IdlixHelper:
             )
 
             if request.status_code == 200 and request.json().get('videoSource'):
-                self.m3u8_url = request.json().get('videoSource')
+                self.m3u8_url = request.json().get('videoSource').rsplit(".", 1)[0] + ".m3u8"
                 self.variant_playlist = m3u8.load(self.m3u8_url)
                 tmp_variant_playlist = []
                 id = 0
@@ -418,4 +426,7 @@ class IdlixHelper:
         convert_file.convert()
 
     def set_m3u8_url(self, m3u8_url):
-        self.m3u8_url = m3u8_url
+        if "https://jeniusplay.com" not in m3u8_url:
+            self.m3u8_url = "https://jeniusplay.com" + m3u8_url
+        else:
+            self.m3u8_url = m3u8_url

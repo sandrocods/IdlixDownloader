@@ -1,201 +1,218 @@
-# IDLIX CLI Video Downloader & Video Player
-
-![image](https://github.com/user-attachments/assets/6f1d736a-c8c8-4af2-9f32-4735dbec45c4)
+# IDLIX Video Downloader & Player  
+CLI + GUI Version (Tkinter + FFplay)
 
 IDLIX CLI Video Downloader & Video Player adalah program berbasis command-line interface (CLI) yang dirancang untuk mengunduh dan memutar video dari platform IDLIX dengan efisien. program ini memungkinkan pengguna untuk
 berinteraksi langsung dengan platform IDLIX, sehingga mereka dapat mengunduh video sesuai dengan preferensi link atau featured movie. Setelah diunduh video dapat diputar dengan lancar menggunakan bantuan FFmpeg / FFplay
 
-## Package
+- Pemilihan resolusi (variant playlist)
+- Subtitle otomatis (VTT → SRT)
+- Downloader M3U8 multithread
+- Pemutar video via FFplay
+- GUI berbasis Tkinter dengan poster grid
 
-berikut ini adalah Package inti yang digunakan untuk membuat program dapat berjalan dengan lancar
+Program mendukung Windows dan Linux.
 
-- [curl_cffi](https://pypi.org/project/curl-cffi/)
-- [requests](https://pypi.org/project/requests/)
-- [m3u8-To-MP4](https://pypi.org/project/m3u8-To-MP4/)
-- [beautifulsoup4](https://pypi.org/project/beautifulsoup4/)
-- [pycryptodomex](https://pypi.org/project/pycryptodomex/)
+------------------------------------------------------------
 
-## Fitur
-
-Berikut ini adalah fitur fitur yang tersedia di program ini
+# Fitur Utama
 
 | Nama                    | Deskripsi                                                          | Status |
 |-------------------------|--------------------------------------------------------------------|--------|
-| Download Featured Movie | Dapat melakukan download berdasarkan section featured movie        | ✔      |
-| Play Featured Movie     | Dapat melakukan pemutaran video berdasarkan section featured movie | ✔      |
-| Download Movie by URL   | Dapat melakukan pengunduhan video berdasarkan link                 | ✔      |
-| Select Resolution       | Dapat memilih resolusi video yang diinginkan                       | ✔      |
-| Subtitle                | Dapat memutar video dengan subtitle                                | ✔      |
-| Play Movie by URL       | Dapat melakukan pemutaran video berdasarkan link                   | ✔      |
-| Pretty Print            | Menampilkan output dengan format yang rapi                         | ✔      |
-| Download Progress       | Menampilkan progress download                                      | ✔      |
+| Featured Movie List     | Menampilkan daftar film unggulan                                   | ✔      |
+| Poster Grid GUI         | Menampilkan poster film dalam grid                                 | ✔      |
+| Play Featured Movie     | Memutar film dari featured                                         | ✔      |
+| Download Featured Movie | Mengunduh film dari featured                                       | ✔      |
+| Play Movie by URL       | Memutar film berdasarkan URL                                       | ✔      |
+| Download Movie by URL   | Mengunduh film berdasarkan URL                                     | ✔      |
+| Select Resolution       | Memilih resolusi (variant playlist)                                | ✔      |
+| Subtitle Support        | Download dan load subtitle otomatis                                | ✔      |
+| FFplay Integration      | Pemutaran video stabil                                              | ✔      |
+| Stop Player Feature     | Menghentikan ffplay                                                 | ✔      |
+| Download Folder Button  | Membuka folder hasil download                                       | ✔      |
+| Log Console GUI         | Log real-time seperti terminal                                      | ✔      |
 
-## Installasi
+------------------------------------------------------------
 
-Berikut ini adalah cara installasi program versi windows
+# Package Utama
 
-##### 1. Lakukan git pada repository ini
+- curl_cffi
+- requests
+- m3u8-To-MP4
+- beautifulsoup4
+- pycryptodomex
+- pillow
+- tkinter
+- FFmpeg / FFplay
 
-```bash
-  git clone https://github.com/sandrocods/IdlixDownloader
-```
+------------------------------------------------------------
 
-##### 2. Install requirements yang dibutuhkan
+# Instalasi
 
-```bash
-  pip3 install -r requirements.txt
-```
+1. Clone repository:
+git clone https://github.com/sandrocods/IdlixDownloader
+cd IdlixDownloader
 
-## Penggunaan
+2. Install requirements:
+pip install -r requirements.txt
 
-Untuk menggunakan program ini, ikuti langkah-langkah berikut:
+3. Jalankan GUI:
+python main_gui.py
 
-##### 1. Jalankan program
+4. Jalankan CLI:
+python main.py
 
-```bash
-  python3 main.py
-```
+------------------------------------------------------------
 
-##### 2. Pilih menu yang tersedia
+# Cara Penggunaan (GUI)
 
-```bash
-  1. Download Featured Movie
-  2. Play Featured Movie
-  3. Download Movie by URL
-  4. Play Movie by URL
-  5. Exit
-```
+1. GUI akan menampilkan poster film dari homepage IDLIX.
+2. Klik poster → Play atau Download.
+3. Tersedia tombol:
+   - Play by URL
+   - Download by URL
+   - Stop Player
+   - Open Downloads Folder
+   - Clear Log
+4. Subtitle otomatis didownload dan dikonversi.
+5. Player menggunakan ffplay.
 
-#### ❗ Note
+------------------------------------------------------------
 
-```
-Program ini akan otomatis mendownload file ( ffmpeg-x.x.x-essentials_build ) berbasis windows yang akan digunakan untuk mendownload dan melakukan pemutaran video secara otomatis
-dan akan melakukan ekstraksi file tersebut ke dalam folder src/ffmpeg, setelah itu program akan melakukan setting PATH secara otomatis
-```
+# Screenshots (GUI Version)
+![](\ss\gui1.jpg)
+![](\ss\gui2.jpg)
+![](\ss\gui3.jpg)
+![](\ss\gui4.jpg)
 
-## Screenshots
+------------------------------------------------------------
 
-#### 1. Tampilan awal program
 
-![App Screenshot](https://github.com/sandrocods/IdlixDownloader/blob/master/ss/1.jpg?raw=true)
+# Fitur CLI
 
-#### 2. Download video berdasarkan featured movie
+Menu CLI:
 
-![App Screenshot](https://github.com/sandrocods/IdlixDownloader/blob/master/ss/2.jpg?raw=true)
+1. Download Featured Movie
+2. Play Featured Movie
+3. Download Movie by URL
+4. Play Movie by URL
+5. Exit
 
-#### 3. Memutar video secara online
+Dengan retry logic dan output tabel PrettyTable.
 
-![App Screenshot](https://github.com/sandrocods/IdlixDownloader/blob/master/ss/3.jpg?raw=true)
 
-#### 4. Memutar video subtitle
+------------------------------------------------------------
 
-![App Screenshot](https://github.com/sandrocods/IdlixDownloader/blob/master/ss/4.jpg?raw=true)
+# Screenshots (CLI Version)
+![](\ss\1.jpg)
+![](\ss\2.jpg)
+![](\ss\3.jpg)
+![](\ss\4.jpg)
 
-#### 5. Memutar video berdasarkan resolusi
+------------------------------------------------------------
 
-![App Screenshot](https://github.com/sandrocods/IdlixDownloader/blob/master/ss/5.jpg?raw=true)
+------------------------------------------------------------
 
-## Roadmap
+# Auto Install FFmpeg (Windows Only)
 
-- Menambahkan type tvseries / episode
+Program akan otomatis:
+
+1. Mengunduh ffmpeg-release-essentials.zip
+2. Mengekstrak ke folder src/ffmpeg
+3. Menambahkan PATH secara otomatis
+
+------------------------------------------------------------
+
+# Roadmap
+
+- Support TV series / episode
+- Search movie (GUI)
+- History (watch & download)
+- Dark/Light Theme
+- Download progress bar
+- Fullscreen GUI player mode
+
+------------------------------------------------------------
 
 # Changelog
 
-<details>
-<summary><strong>2024-11-27</strong></summary>
+2025-11-28 — BIG UPDATE
+-----------------------
+Added:
+- GUI lengkap Tkinter
+- Poster grid scrollable
+- Play & Download by URL
+- Popup menu per movie
+- Stop player
+- Open folder
+- Clear log
+- Log GUI
+- Retry logic 3x
+- Perbaikan helper
+- Subtitle & m3u8 handling lebih robust
 
-### Updated
+Updated:
+- Struktur process movie
+- UI lebih intuitif
+- Logger lebih clean
 
-- Updated API for new server changes.
+------------------------------------------------------------
 
-</details>
+2024-11-27
+----------
+Updated API untuk server baru
 
-<details>
-<summary><strong>2024-08-21</strong></summary>
+------------------------------------------------------------
 
-### Added
+2024-08-21
+----------
+Added:
+- README.md
+- requirements.txt
+- Screenshots
 
-- Added `README.md`.
-- Added `requirements.txt`.
-- Added project screenshots.
+Updated:
+- Subtitle & resolusi
+- Helper Linux
+- Optimasi project
 
-### Updated
+------------------------------------------------------------
 
-- Updated resolution and subtitle handling.
-- Updated helper scripts for Linux.
-- Optimized various aspects of the project.
-- Updated `README.md` with new details.
+2023-03-28
+----------
+General improvements
 
-</details>
+------------------------------------------------------------
 
-<details>
-<summary><strong>2023-03-28</strong></summary>
+2022-09-09
+----------
+Added worker threads  
+Updated logging  
+Cleaned code  
+Removed redundant logs
 
-### Updated
+------------------------------------------------------------
 
-- General update with changes and improvements.
+2022-09-08
+----------
+Fixed API update issues
 
-</details>
+------------------------------------------------------------
 
-<details>
-<summary><strong>2022-09-09</strong></summary>
+2022-08-17
+----------
+Added ffmpeg integration  
+Fixed exe issues  
+Added tutorial images  
 
-### Added
+------------------------------------------------------------
 
-- Added worker threads for better concurrency.
+2022-08-12 — Initial Commit
+---------------------------
 
-### Updated
+------------------------------------------------------------
 
-- Cleaned code for better readability ✨.
-- Improved logging functionality.
+# Disclaimer
 
-### Removed
-
-- Deleted logging in certain areas to streamline performance.
-
-</details>
-
-<details>
-<summary><strong>2022-09-08</strong></summary>
-
-### Fixed
-
-- Fixed API updates during the download process.
-
-</details>
-
-<details>
-<summary><strong>2022-08-17</strong></summary>
-
-### Added
-
-- Added `ffmpeg` integration.
-- Added tutorial images for better guidance.
-
-### Fixed
-
-- Fixed `.exe` file issues.
-- Fixed issues with `ffmpeg` directory handling.
-
-### Updated
-
-- Updated `README.md` with more comprehensive information.
-- Updated and improved overall code quality.
-
-</details>
-
-<details>
-<summary><strong>2022-08-12</strong></summary>
-
-### Added
-
-- Initial project commit.
-- Created the first version of `README.md`.
-- Added tutorial images for initial guidance.
-
-</details>
-
-## Note
-
-Program ini dibuat untuk keperluan pembelajaran semata, segala bentuk penyalahgunaan diluar tanggung jawab pembuat program ini
+Program ini dibuat untuk pembelajaran.  
+Segala penyalahgunaan di luar tanggung jawab pembuat.
 
