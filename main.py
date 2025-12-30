@@ -8,12 +8,19 @@ RETRY_LIMIT = 3
 
 
 def retry(func, *args, **kwargs):
+    last_result = {"status": False, "message": "Unknown error"}
     for _ in range(RETRY_LIMIT):
-        result = func(*args, **kwargs)
-        if result and result.get("status"):
-            return result
+        try:
+            result = func(*args, **kwargs)
+            if result and result.get("status"):
+                return result
+            last_result = result
+        except Exception as e:
+            last_result = {"status": False, "message": str(e)}
         time.sleep(1)
-    return {"status": False, "message": "Maximum retry reached"}
+    if not last_result.get("message"):
+        last_result["message"] = "Maximum retry reached"
+    return last_result
 
 
 def play_m3u8_thread(idlix_helper):
@@ -21,7 +28,7 @@ def play_m3u8_thread(idlix_helper):
     if result.get("status"):
         logger.success("Playing Success")
     else:
-        logger.error("Error playing m3u8")
+        logger.error(f"Error playing m3u8: {result.get('message')}")
 
 
 def process_movie(idlix_helper, url: str, mode: str):

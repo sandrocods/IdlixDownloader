@@ -19,27 +19,15 @@ from loguru import logger
 from bs4 import BeautifulSoup
 from urllib.parse import unquote, urlparse
 from vtt_to_srt.vtt_to_srt import ConvertFile
-from curl_cffi import requests as cffi_requests
+import cloudscraper
 from src.CryptoJsAesHelper import CryptoJsAes, dec
 
 
 class IdlixHelper:
-    BASE_WEB_URL = "https://tv10.idlixku.com/"
+    BASE_WEB_URL = "https://tv12.idlixku.com/"
     BASE_STATIC_HEADERS = {
-        "Host": "tv10.idlixku.com",
-        "Connection": "keep-alive",
-        "sec-ch-ua": "Not)A;Brand;v=99, Google Chrome;v=127, Chromium;v=127",
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": "Windows",
-        "Upgrade-Insecure-Requests": "1",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-        "Sec-Fetch-Site": "same-origin",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-User": "?1",
-        "Sec-Fetch-Dest": "document",
         "Referer": BASE_WEB_URL,
-        "Accept-Language": "en-US,en;q=0.9,id;q=0.8"
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
     }
 
     def __init__(self):
@@ -50,11 +38,14 @@ class IdlixHelper:
         self.video_name = None
         self.is_subtitle = None
         self.variant_playlist = None
-        self.request = cffi_requests.Session(
-            impersonate=random.choice(["chrome124", "chrome119", "chrome104"]),
-            headers=self.BASE_STATIC_HEADERS,
-            debug=False,
+        self.request = cloudscraper.create_scraper(
+            browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'desktop': True
+            }
         )
+        self.request.headers.update(self.BASE_STATIC_HEADERS)
 
         # Proxy Example
         # self.request.proxies = {
@@ -62,34 +53,45 @@ class IdlixHelper:
         # }
 
         # FFMPEG
+        # FFMPEG
         if os.name == 'nt':
-            for _ in os.environ.get('path').split(';'):
-                if 'ffmpeg' in _:
-                    logger.info(f'FFMPEG Found: {_}')
-                    break
-            else:
-                if not os.path.exists('ffmpeg-release-essentials.zip'):
-                    self.download_ffmpeg()
-                logger.warning('FFMPEG not set in PATH, Trying set PATH')
-                try:
-                    with zipfile.ZipFile('ffmpeg-release-essentials.zip', 'r') as zip_ref:
-                        zip_ref.extractall(
-                            os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ffmpeg')
-                        )
-                    logger.success('Success Extracting ffmpeg')
-                    path = ""
-                    for _ in os.listdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ffmpeg')):
-                        if 'ffmpeg' in _:
-                            logger.info(f'Found: {os.path.join(os.path.dirname(os.path.abspath(__file__)), "ffmpeg", _, "bin")}')
-                            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ffmpeg", _, "bin")
+            if not shutil.which('ffplay'):
+                # Check Local
+                local_ffmpeg = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ffmpeg')
+                bin_path = None
+                
+                if os.path.exists(local_ffmpeg):
+                    for root, dirs, files in os.walk(local_ffmpeg):
+                        if 'ffplay.exe' in files:
+                            bin_path = root
                             break
-                    else:
-                        logger.error('FFMPEG not found, please install ffmpeg first before running this script')
-                    subprocess.call(["setx", "PATH", "%PATH%;" + path])
-                    logger.success('FFMPEG PATH set successfully, Please restart the program')
-                    exit()
-                except Exception as e:
-                    print(f'Error: {e}')
+                            
+                if bin_path:
+                    logger.info(f'FFMPEG Found Locally: {bin_path}')
+                    os.environ["PATH"] += os.pathsep + bin_path
+                else:
+                    if not os.path.exists('ffmpeg-release-essentials.zip'):
+                        self.download_ffmpeg()
+                    
+                    logger.warning('Extracting ffmpeg...')
+                    try:
+                        with zipfile.ZipFile('ffmpeg-release-essentials.zip', 'r') as zip_ref:
+                            zip_ref.extractall(local_ffmpeg)
+                        
+                        # Find bin again
+                        for root, dirs, files in os.walk(local_ffmpeg):
+                            if 'ffplay.exe' in files:
+                                bin_path = root
+                                break
+                                
+                        if bin_path:
+                            logger.success(f'FFMPEG Extracted to: {bin_path}')
+                            os.environ["PATH"] += os.pathsep + bin_path
+                        else:
+                            logger.error('Failed to find ffplay.exe after extraction')
+                            
+                    except Exception as e:
+                        logger.error(f'Error extracting ffmpeg: {e}')
         else:
             if not shutil.which('ffmpeg'):
                 logger.error('FFMPEG not found, please install ffmpeg first before running this script')
@@ -238,7 +240,7 @@ class IdlixHelper:
             self.embed_url = urlparse(self.embed_url).query.split('=')[1]
 
         try:
-            request = cffi_requests.post(
+            request = self.request.post(
                 url='https://jeniusplay.com/player/index.php',
                 params={
                     "data": self.embed_url,
@@ -253,7 +255,6 @@ class IdlixHelper:
                     "hash": self.embed_url,
                     "r": self.BASE_WEB_URL,
                 },
-                impersonate="chrome",
             )
 
             if request.status_code == 200 and request.json().get('videoSource'):
@@ -294,9 +295,22 @@ class IdlixHelper:
                     'status': False,
                     'message': 'M3U8 URL is required'
                 }
+            
+            # Create tmp directory if not exists
             if not os.path.exists(os.getcwd() + '/tmp/'):
-                os.mkdir(os.getcwd() + '/tmp/')
+                os.makedirs(os.getcwd() + '/tmp/', exist_ok=True)
 
+            # --- Automatic Subtitle Download ---
+            logger.info("Checking for subtitles...")
+            sub_res = self.get_subtitle(download=True)
+            if sub_res.get('status'):
+                logger.success(f"Subtitle downloaded: {sub_res.get('subtitle')}")
+                # The get_subtitle already names it as safe_title.srt
+            else:
+                logger.warning(f"No subtitle found or failed to download: {sub_res.get('message')}")
+            # ------------------------------------
+
+            logger.info(f"Starting download for {self.video_name}...")
             m3u8_To_MP4.multithread_download(
                 m3u8_uri=self.m3u8_url,
                 max_num_workers=10,
@@ -304,17 +318,24 @@ class IdlixHelper:
                 mp4_file_dir=os.getcwd() + '/',
                 tmpdir=os.getcwd() + '/tmp/'
             )
+            
+            # Cleanup tmp folder
             shutil.rmtree(os.getcwd() + '/tmp/', ignore_errors=True)
+            
+            final_path = os.getcwd() + '/' + self.video_name + '.mp4'
             return {
                 'status': True,
                 'message': 'Download success',
-                'path': os.getcwd() + '/' + self.video_name + '.mp4'
+                'path': final_path
             }
         except Exception as error_download_m3u8:
             return {
                 'status': False,
                 'message': str(error_download_m3u8)
             }
+
+    def get_safe_title(self):
+        return re.sub(r'[\\/*?:"<>|&]', "", self.video_name).replace(" ", "_")
 
     def get_subtitle(self, download=True):
         try:
@@ -324,7 +345,7 @@ class IdlixHelper:
                     'message': 'Embed URL is required'
                 }
 
-            request = cffi_requests.post(
+            request = self.request.post(
                 url='https://jeniusplay.com/player/index.php',
                 params={
                     "data": self.embed_url,
@@ -338,22 +359,22 @@ class IdlixHelper:
                     "hash": self.embed_url,
                     "r": self.BASE_WEB_URL
                 },
-                impersonate="chrome",
-
             )
             regex_subtitle = re.search(r"var playerjsSubtitle = \"(.*)\";", request.text)
+            safe_title = self.get_safe_title()
+            
             if regex_subtitle:
                 if download:
                     subtitle_request = requests.get(
                         url="https://" + regex_subtitle.group(1).split("https://")[1],
                     )
-                    with open(self.video_name.replace(" ", "_") + '.vtt', 'wb') as subtitle_file:
+                    with open(safe_title + '.vtt', 'wb') as subtitle_file:
                         subtitle_file.write(subtitle_request.content)
-                    self.convert_vtt_to_srt(self.video_name.replace(" ", "_") + '.vtt')
+                    self.convert_vtt_to_srt(safe_title + '.vtt')
                     self.is_subtitle = True
                     return {
                         'status': True,
-                        'subtitle': self.video_name.replace(" ", "_") + '.srt',
+                        'subtitle': safe_title + '.srt',
                     }
 
                 self.is_subtitle = True
@@ -380,35 +401,92 @@ class IdlixHelper:
                     'status': False,
                     'message': 'M3U8 URL is required'
                 }
+            
+            # Construct Headers (Checking logic for both players)
+            user_agent = self.request.headers.get("User-Agent", "Mozilla/5.0")
+            
+            # --- Try VLC Player (GUI) first ---
+            try:
+                from src.vlc_player import play_video_standalone
+                
+                safe_title = self.get_safe_title()
+                subtitle_file = safe_title + ".srt" if (self.is_subtitle and os.path.exists(safe_title + ".srt")) else None
+                
+                logger.info("DeepMind: Attempting to launch VLC Player...")
+                success = play_video_standalone(self, self.m3u8_url, subtitle_file, self.video_name)
+                
+                if success:
+                    return {
+                        'status': True,
+                        'message': 'Playing on VLC'
+                    }
+                else:
+                    logger.warning("VLC Player failed or not available. Falling back to FFplay.")
+            
+            except Exception as e:
+                logger.error(f"Error launching VLC: {e}. Falling back to FFplay.")
+            # ----------------------------------
 
-            if self.is_subtitle:
-                subprocess.call([
-                    "ffplay",
-                    "-i",
-                    self.m3u8_url,
-                    "-window_title",
-                    self.video_name,
-                    "-vf",
-                    "subtitles=" + self.video_name.replace(" ", "_") + ".srt",
-                    "-hide_banner",
-                    "-loglevel",
-                    "panic"
-                ])
+            logger.info("Launching FFplay...")
+            headers = ""
+            for k, v in self.BASE_STATIC_HEADERS.items():
+                headers += f"{k}: {v}\r\n"
+            
+            # Add Cookies
+            cookies = self.request.cookies.get_dict()
+            if cookies:
+                cookie_str = "; ".join([f"{k}={v}" for k, v in cookies.items()])
+                headers += f"Cookie: {cookie_str}\r\n"
+            
+            safe_title = self.get_safe_title()
 
-            subprocess.call([
+            command = [
                 "ffplay",
+                "-allowed_extensions", "ALL",
+                "-allowed_segment_extensions", "ALL",
+                "-extension_picky", "0",
                 "-i",
                 self.m3u8_url,
                 "-window_title",
                 self.video_name,
+                "-user_agent",
+                user_agent,
+                "-headers",
+                headers,
                 "-hide_banner",
-                "-loglevel",
-                "panic"
-            ])
+                "-autoexit"
+            ]
 
-            if self.is_subtitle and os.path.exists(self.video_name.replace(" ", "_") + '.srt'):
-                os.remove(self.video_name.replace(" ", "_") + '.srt')
-                os.remove(self.video_name.replace(" ", "_") + '.vtt')
+            if self.is_subtitle:
+                 command.extend(["-vf", "subtitles=" + safe_title + ".srt"])
+
+            logger.info(f"FFplay Command: {' '.join(command)}")
+
+            try:
+                # Capture output to keep the terminal clean for CLI menu
+                result = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+
+                if result.returncode != 0:
+                    return {
+                        'status': False,
+                        # Include stderr in the error message for debugging
+                        'message': f"FFplay exited with code {result.returncode}: {result.stderr}"
+                    }
+
+            except FileNotFoundError:
+                 return {
+                    'status': False,
+                    'message': "FFplay not found. Please ensure ffmpeg is installed/downloaded correctly."
+                }
+
+            if self.is_subtitle and os.path.exists(safe_title + '.srt'):
+                os.remove(safe_title + '.srt')
+                os.remove(safe_title + '.vtt')
 
             return {
                 'status': True,
