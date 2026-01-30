@@ -5,6 +5,7 @@ import subprocess
 import os
 import time
 import webbrowser
+import shutil
 from io import BytesIO
 
 from PIL import Image, ImageTk
@@ -12,6 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from src.idlixHelper import IdlixHelper, logger
+
 
 # ============================================================
 # RETRY logic (same as CLI)
@@ -57,7 +59,10 @@ class IdlixGUI:
         self.idlix = IdlixHelper()
         self.featured_movies = []
         self.poster_images = []
-        self.ffplay_process = None
+        self.vlc_process = None
+
+        # Check VLC installation
+        self.check_vlc_installation()
 
         # Main container
         main_frame = ttk.Frame(root, padding=10)
@@ -111,6 +116,80 @@ class IdlixGUI:
 
         # Load posters initially
         self.refresh_featured()
+
+    # ============================================================
+    # VLC CHECK & INSTALLATION
+    # ============================================================
+    def check_vlc_installation(self):
+        """Check jika VLC sudah terinstall"""
+        
+        # Cek di PATH
+        if shutil.which('vlc'):
+            logger.info("VLC found in PATH")
+            return True
+        
+        # Cek di lokasi default Windows
+        if os.name == 'nt':  # Windows
+            possible_paths = [
+                r"C:\Program Files\VideoLAN\VLC\vlc.exe",
+                r"C:\Program Files (x86)\VideoLAN\VLC\vlc.exe",
+            ]
+            
+            for path in possible_paths:
+                if os.path.exists(path):
+                    logger.info(f"VLC found at: {path}")
+                    # Set VLC path
+                    os.environ['VLC_PATH'] = path
+                    return True
+        
+        # VLC tidak ditemukan
+        logger.warning("VLC not found")
+        response = messagebox.askyesno(
+            "VLC Not Found",
+            "VLC Media Player is required to play videos.\n\n"
+            "Do you want to download VLC installer now?"
+        )
+        
+        if response:
+            webbrowser.open("https://www.videolan.org/vlc/download-windows.html")
+            messagebox.showinfo(
+                "Install VLC",
+                "Please install VLC and restart this application.\n\n"
+                "After installation, VLC will be automatically detected."
+            )
+            self.root.destroy()
+        else:
+            messagebox.showwarning(
+                "Warning",
+                "You can still download videos, but cannot play them.\n\n"
+                "Install VLC to enable playback feature."
+            )
+        
+        return False
+
+    def get_vlc_command(self):
+        """Get VLC executable path"""
+        
+        # Check if VLC in PATH
+        if shutil.which('vlc'):
+            return 'vlc'
+        
+        # Check environment variable (set by check_vlc_installation)
+        if 'VLC_PATH' in os.environ:
+            return os.environ['VLC_PATH']
+        
+        # Check default Windows paths
+        if os.name == 'nt':
+            possible_paths = [
+                r"C:\Program Files\VideoLAN\VLC\vlc.exe",
+                r"C:\Program Files (x86)\VideoLAN\VLC\vlc.exe",
+            ]
+            
+            for path in possible_paths:
+                if os.path.exists(path):
+                    return path
+        
+        return None
 
     # ============================================================
     # POSTER GRID
@@ -306,10 +385,9 @@ class IdlixGUI:
             # PLAY
             if mode == "play":
                 subtitle = idlix.get_subtitle()
-
                 subtitle_file = subtitle["subtitle"] if subtitle.get("status") else None
-
-                self.start_ffplay(idlix.m3u8_url, subtitle_file)
+                
+                self.start_vlc(idlix.m3u8_url, idlix.video_name, subtitle_file)
 
             # DOWNLOAD
             else:
@@ -322,27 +400,103 @@ class IdlixGUI:
         threading.Thread(target=task, daemon=True).start()
 
     # ============================================================
-    # ffplay controls
+    # VLC PLAYER
     # ============================================================
-    def start_ffplay(self, m3u8_url, subtitle=None):
-
+    def start_vlc(self, m3u8_url, video_title, subtitle=None):
+        """Start VLC player"""
+        
+        vlc_cmd = self.get_vlc_command()
+        
+        if not vlc_cmd:
+            logger.error("VLC not found")
+            messagebox.showerror(
+                "VLC Not Found",
+                "Please install VLC Media Player first.\n\n"
+                "Download from: https://www.videolan.org/vlc/"
+            )
+            return
+        
         self.stop_player()
 
-        args = ["ffplay", "-i", m3u8_url, "-window_title", "IDLIX Player", "-loglevel", "panic"]
-
+        # Build VLC command
+        args = [
+            vlc_cmd,
+            m3u8_url,
+            f"--meta-title={video_title}",
+            "--no-video-title-show",  # Jangan show title di video
+        ]
+        
         if subtitle:
-            args += ["-vf", f"subtitles={subtitle}"]
+            args.append(f"--sub-file={subtitle}")
 
-        logger.info("Opening ffplay...")
-        self.ffplay_process = subprocess.Popen(args)
+        logger.info(f"Starting VLC player...")
+        logger.info(f"Video: {video_title}")
+        logger.info(f"URL: {m3u8_url[:80]}...")
+        if subtitle:
+            logger.info(f"Subtitle: {subtitle}")
+        
+        start_time = time.time()
+        
+        def run_vlc():
+            try:
+                self.vlc_process = subprocess.Popen(
+                    args,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                
+                # Wait for VLC to close
+                stdout, stderr = self.vlc_process.communicate()
+                
+                elapsed = time.time() - start_time
+                return_code = self.vlc_process.returncode
+                
+                logger.info(f"VLC ran for {elapsed:.2f} seconds")
+                
+                if return_code != 0:
+                    logger.error(f"VLC exited with code {return_code}")
+                    if stderr:
+                        logger.error(f"Error output: {stderr[:500]}")
+                else:
+                    logger.info("VLC closed normally")
+                
+                # Cleanup subtitle files
+                if subtitle and os.path.exists(subtitle):
+                    try:
+                        time.sleep(0.5)
+                        os.remove(subtitle)
+                        vtt_file = subtitle.replace('.srt', '.vtt')
+                        if os.path.exists(vtt_file):
+                            os.remove(vtt_file)
+                        logger.info("Subtitle files cleaned up.")
+                    except Exception as e:
+                        logger.warning(f"Failed to cleanup subtitle: {e}")
+                        
+            except Exception as e:
+                logger.error(f"VLC error: {str(e)}")
+                self.root.after(0, lambda: messagebox.showerror(
+                    "VLC Error",
+                    f"Failed to start VLC:\n{str(e)}"
+                ))
+        
+        threading.Thread(target=run_vlc, daemon=True).start()
+        logger.success("VLC started successfully")
 
     def stop_player(self):
-        if self.ffplay_process and self.ffplay_process.poll() is None:
+        """Stop VLC player"""
+        if self.vlc_process and self.vlc_process.poll() is None:
             try:
-                self.ffplay_process.terminate()
-                logger.info("ffplay terminated.")
-            except:
-                pass
+                self.vlc_process.terminate()
+                self.vlc_process.wait(timeout=2)
+                logger.info("VLC terminated.")
+            except subprocess.TimeoutExpired:
+                self.vlc_process.kill()
+                logger.warning("VLC force killed.")
+            except Exception as e:
+                logger.error(f"Error stopping VLC: {e}")
+            finally:
+                self.vlc_process = None
 
     def open_download_folder(self):
         webbrowser.open(os.getcwd())

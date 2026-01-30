@@ -9,6 +9,7 @@ import os
 import random
 import re
 import json
+from urllib import response
 import m3u8
 import shutil
 import zipfile
@@ -24,9 +25,9 @@ from src.CryptoJsAesHelper import CryptoJsAes, dec
 
 
 class IdlixHelper:
-    BASE_WEB_URL = "https://tv10.idlixku.com/"
+    BASE_WEB_URL = "https://tv12.idlixku.com/"
     BASE_STATIC_HEADERS = {
-        "Host": "tv10.idlixku.com",
+        "Host": "tv12.idlixku.com",
         "Connection": "keep-alive",
         "sec-ch-ua": "Not)A;Brand;v=99, Google Chrome;v=127, Chromium;v=127",
         "sec-ch-ua-mobile": "?0",
@@ -50,6 +51,10 @@ class IdlixHelper:
         self.video_name = None
         self.is_subtitle = None
         self.variant_playlist = None
+
+        # Auto-detect URL jika terjadi perubahan domain
+        self._update_base_url()
+
         self.request = cffi_requests.Session(
             impersonate=random.choice(["chrome124", "chrome119", "chrome104"]),
             headers=self.BASE_STATIC_HEADERS,
@@ -117,6 +122,91 @@ class IdlixHelper:
             logger.success('Downloaded ffmpeg')
         except Exception as e:
             print(f'Error: {e}')
+
+    def _update_base_url(self):
+        """
+        Auto-detect dan update BASE_WEB_URL dengan bypass Cloudflare
+        """
+        try:
+            logger.info(f"Checking BASE_WEB_URL: {self.BASE_WEB_URL}")
+            
+            # Gunakan curl-cffi untuk bypass Cloudflare
+            response = cffi_requests.get(
+                self.BASE_WEB_URL,
+                headers=self.BASE_STATIC_HEADERS,
+                impersonate=random.choice(["chrome124", "chrome119", "chrome110"]),
+                allow_redirects=True,
+                timeout=15
+            )
+            
+            # Check jika masih Cloudflare challenge
+            if 'challenge-platform' in response.text or 'cf_chl_opt' in response.text:
+                logger.warning("Cloudflare challenge detected, trying alternative domains...")
+                
+                # List domain alternatif IDLIX yang umum
+                alternative_domains = [
+                    "https://tv12.idlixku.com/",
+                    "https://tv11.idlixku.com/",
+                    "https://tv13.idlixku.com/",
+                    "https://tv14.idlixku.com/",
+                    "https://tv15.idlixku.com/",
+                ]
+                
+                # Coba setiap domain alternatif
+                for alt_domain in alternative_domains:
+                    if alt_domain == self.BASE_WEB_URL:
+                        continue
+                        
+                    logger.info(f"Trying alternative domain: {alt_domain}")
+                    
+                    try:
+                        alt_response = cffi_requests.get(
+                            alt_domain,
+                            headers={**self.BASE_STATIC_HEADERS, "Host": urlparse(alt_domain).netloc},
+                            impersonate=random.choice(["chrome124", "chrome119"]),
+                            allow_redirects=True,
+                            timeout=10
+                        )
+                        
+                        # Check jika berhasil (bukan Cloudflare challenge)
+                        if 'challenge-platform' not in alt_response.text and alt_response.status_code == 200:
+                            logger.success(f"Alternative domain works: {alt_domain}")
+                            response = alt_response
+                            final_url = alt_domain
+                            break
+                    except Exception as e:
+                        logger.warning(f"Failed to access {alt_domain}: {str(e)}")
+                        continue
+                else:
+                    logger.error("All alternative domains failed or behind Cloudflare")
+                    logger.warning(f"Using default URL: {self.BASE_WEB_URL}")
+                    return
+            else:
+                final_url = response.url
+            
+            # Parse final URL
+            parsed_url = urlparse(final_url)
+            new_base_url = f"{parsed_url.scheme}://{parsed_url.netloc}/"
+            
+            # Update jika berbeda
+            if new_base_url != self.BASE_WEB_URL:
+                logger.warning(f"Domain changed detected!")
+                logger.warning(f"Old URL: {self.BASE_WEB_URL}")
+                logger.warning(f"New URL: {new_base_url}")
+                
+                # Update BASE_WEB_URL dan headers
+                self.BASE_WEB_URL = new_base_url
+                self.BASE_STATIC_HEADERS["Host"] = parsed_url.netloc
+                self.BASE_STATIC_HEADERS["Referer"] = new_base_url
+                
+                logger.success(f"BASE_WEB_URL updated to: {self.BASE_WEB_URL}")
+            else:
+                logger.success(f"BASE_WEB_URL is up to date: {self.BASE_WEB_URL}")
+                
+        except Exception as e:
+            logger.error(f"Error updating BASE_WEB_URL: {str(e)}")
+            logger.warning(f"Using default URL: {self.BASE_WEB_URL}")
+
 
     def get_home(self):
         try:
