@@ -2,14 +2,17 @@
 
 CLI + GUI Version (Tkinter + VLC / FFplay)
 
-IDLIX CLI Video Downloader & Video Player adalah program berbasis command-line interface (CLI) dan GUI yang dirancang untuk mengunduh dan memutar video dari platform IDLIX dengan efisien. Program ini memungkinkan pengguna untuk berinteraksi langsung dengan platform IDLIX, sehingga mereka dapat mengunduh video sesuai dengan preferensi link atau featured movie. Setelah diunduh video dapat diputar dengan lancar menggunakan VLC Player (utama) atau FFplay (fallback).
+IDLIX Video Downloader & Player adalah program berbasis CLI dan GUI yang dirancang untuk mengunduh dan memutar video dari platform IDLIX. Program ini mendukung **Movies** dan **TV Series** dengan fitur lengkap termasuk pemilihan episode, multi-subtitle, dan player modern bergaya YouTube.
 
-- Pemilihan resolusi (variant playlist)
-- Subtitle otomatis (VTT → SRT)
-- Downloader M3U8 multithread
-- Pemutar video via VLC Player (utama) atau FFplay (fallback)
-- GUI berbasis Tkinter dengan poster grid
-- Unit tests untuk memastikan stabilitas
+## ✨ Highlights
+
+- 🎬 **Movies & TV Series** - Browse dan putar film atau serial TV
+- 📺 **Episode Browser** - Pilih season dan episode dengan mudah
+- 🗣️ **Multi-Subtitle** - Pilih bahasa subtitle yang tersedia
+- 🎨 **Modern Dark UI** - Tampilan Netflix-style dengan tema gelap
+- ▶️ **YouTube-style Player** - Loading animation, progress bar, auto-hide controls
+- 📥 **Multithread Download** - Download cepat dengan M3U8-To-MP4
+- 🔄 **Auto Retry** - Logic retry 3x untuk koneksi stabil
 
 Program mendukung Windows dan Linux.
 
@@ -17,21 +20,24 @@ Program mendukung Windows dan Linux.
 
 # Fitur Utama
 
-| Nama                    | Deskripsi                                                   | Status |
-| ----------------------- | ----------------------------------------------------------- | ------ |
-| Featured Movie List     | Menampilkan daftar film unggulan                            | ✔      |
-| Poster Grid GUI         | Menampilkan poster film dalam grid                          | ✔      |
-| Play Featured Movie     | Memutar film dari featured                                  | ✔      |
-| Download Featured Movie | Mengunduh film dari featured                                | ✔      |
-| Play Movie by URL       | Memutar film berdasarkan URL                                | ✔      |
-| Download Movie by URL   | Mengunduh film berdasarkan URL                              | ✔      |
-| Select Resolution       | Memilih resolusi (variant playlist)                         | ✔      |
-| Subtitle Support        | Download dan load subtitle otomatis                         | ✔      |
-| VLC Player GUI          | Player terintegrasi dengan kontrol UI (Seek, Vol, Sub Sync) | ✔      |
-| FFplay Integration      | Pemutaran video stabil (fallback)                           | ✔      |
-| Stop Player Feature     | Menghentikan player                                         | ✔      |
-| Download Folder Button  | Membuka folder hasil download                               | ✔      |
-| Log Console GUI         | Log real-time seperti terminal                              | ✔      |
+| Nama                     | Deskripsi                                               | Status |
+| ------------------------ | ------------------------------------------------------- | ------ |
+| Featured Movies          | Menampilkan daftar film unggulan                        | ✔      |
+| Featured TV Series       | Menampilkan daftar serial TV unggulan                   | ✔      |
+| Episode Browser          | Browse season dan episode untuk serial TV               | ✔      |
+| Poster Grid GUI          | Menampilkan poster dalam grid dengan dark theme         | ✔      |
+| Play/Download Movie      | Memutar atau unduh film                                 | ✔      |
+| Play/Download Episode    | Memutar atau unduh episode serial                       | ✔      |
+| Play by URL              | Memutar berdasarkan URL (movie/series/episode)          | ✔      |
+| Download by URL          | Mengunduh berdasarkan URL                               | ✔      |
+| Select Resolution        | Memilih resolusi (variant playlist)                     | ✔      |
+| Multi-Subtitle Support   | Pilih dari beberapa bahasa subtitle yang tersedia       | ✔      |
+| YouTube-style VLC Player | Player modern dengan loading animation dan progress bar | ✔      |
+| Auto-hide Controls       | Controls tersembunyi otomatis saat fullscreen           | ✔      |
+| FFplay Fallback          | Fallback ke FFplay jika VLC tidak tersedia              | ✔      |
+| Download Folder Button   | Membuka folder hasil download                           | ✔      |
+| Log Console GUI          | Log real-time dengan warna                              | ✔      |
+| Batch Download           | Download semua episode dalam satu season (CLI)          | ✔      |
 
 ---
 
@@ -44,6 +50,10 @@ Program mendukung Windows dan Linux.
 - pycryptodomex
 - pillow
 - python-vlc
+- loguru
+- inquirer
+- prettytable
+- vtt-to-srt
 - FFmpeg / FFplay
 
 ---
@@ -83,23 +93,39 @@ Prasyarat:
 
 # Cara Penggunaan (GUI)
 
-1. GUI akan menampilkan poster film dari homepage IDLIX.
-2. Klik poster → Play atau Download.
-3. Player menggunakan VLC (jendela terpisah dengan kontrol UI):
-   - Shortcut keyboard:
-     - `Spasi`: Play/Pause
-     - `F` / `Double Click`: Fullscreen
-     - `Panah Kanan/Kiri`: Seek +/- 5 detik
-     - `Panah Atas/Bawah`: Volume +/- 5
-     - `G` / `H`: Sinkronisasi Subtitle (-/+ 50ms)
-4. Jika VLC tidak ditemukan, otomatis fallback ke ffplay.
-5. Tersedia tombol:
-   - Play by URL
-   - Download by URL
-   - Stop Player
-   - Open Downloads Folder
-   - Clear Log
-6. Subtitle otomatis didownload dan dikonversi.
+1. Jalankan `python main_gui.py`
+2. GUI menampilkan tab **Movies** dan **TV Series**
+3. Klik poster untuk melihat opsi:
+   - **Movie**: Play atau Download
+   - **Series**: Browse Episodes → Pilih Season → Pilih Episode
+4. Pilih resolusi dari dialog yang muncul
+5. Pilih subtitle (jika tersedia multiple bahasa)
+6. Player VLC akan terbuka dengan kontrol modern:
+
+### Keyboard Shortcuts (VLC Player)
+
+| Shortcut           | Fungsi                 |
+| ------------------ | ---------------------- |
+| `Spasi`            | Play/Pause             |
+| `F` / Double Click | Toggle Fullscreen      |
+| `←` / `→`          | Seek -/+ 10 detik      |
+| `↑` / `↓`          | Volume +/- 5           |
+| `G` / `H`          | Subtitle Sync -/+ 50ms |
+| `M`                | Mute/Unmute            |
+| `Esc`              | Exit Fullscreen        |
+
+### Fitur Player
+
+- **Loading Animation** - Spinner animasi saat buffering
+- **Progress Bar** - Klik untuk seek ke posisi tertentu
+- **Auto-hide Controls** - Controls tersembunyi saat fullscreen (muncul saat mouse bergerak)
+- **Time Display** - Menampilkan waktu saat ini dan durasi total
+- **Volume Slider** - Kontrol volume dengan slider
+
+7. Tombol tersedia di header:
+   - 🔄 Refresh - Muat ulang daftar
+   - 📂 Downloads - Buka folder download
+   - 🔗 URL - Play/Download dari URL langsung
 
 ---
 
@@ -114,15 +140,20 @@ Prasyarat:
 
 # Fitur CLI
 
-Menu CLI:
+Menu CLI interaktif dengan `inquirer`:
 
-1. Download Featured Movie
-2. Play Featured Movie
-3. Download Movie by URL
-4. Play Movie by URL
-5. Exit
+1. 🎬 Movies
+   - Browse Featured Movies
+   - Play atau Download
+2. 📺 TV Series
+   - Browse Featured Series
+   - Pilih Season → Pilih Episode
+   - Download All Episodes (batch download)
+3. 🔗 Play/Download by URL
+   - Support URL movie, series, atau episode
+4. ❌ Exit
 
-Dengan retry logic dan output tabel PrettyTable.
+Dengan retry logic 3x dan output tabel PrettyTable.
 
 ---
 
@@ -149,16 +180,42 @@ Program akan otomatis:
 
 # Roadmap
 
-- Support TV series / episode
-- Search movie (GUI)
-- History (watch & download)
-- Dark/Light Theme
-- Download progress bar
-- Fullscreen GUI player mode
+- [x] ~~Support TV series / episode~~ ✅
+- [x] ~~Multi-subtitle selection~~ ✅
+- [x] ~~Modern dark theme UI~~ ✅
+- [x] ~~YouTube-style player~~ ✅
+- [ ] Search movie (GUI)
+- [ ] History (watch & download)
+- [ ] Download progress bar
+- [ ] Watchlist / Favorites
 
 ---
 
 # Changelog
+
+## 2026-02-04 — TV Series & Modern UI Update
+
+Added:
+
+- **TV Series Support** - Browse featured series, seasons, dan episodes
+- **Episode Browser** - Dialog untuk pilih season dan episode
+- **Multi-Subtitle Selection** - Pilih dari beberapa bahasa subtitle
+- **Batch Episode Download** - Download semua episode dalam season (CLI)
+- **Modern Dark Theme** - Netflix-style UI dengan warna gelap
+- **YouTube-style VLC Player** - Loading spinner, modern controls
+- **Auto-hide Controls** - Controls tersembunyi di fullscreen, muncul saat mouse bergerak
+- **Bigger Progress Bar** - Lebih mudah diklik untuk seeking
+
+Updated:
+
+- GUI sepenuhnya didesain ulang dengan tema gelap
+- Tab Movies/Series untuk navigasi mudah
+- Dialog resolution dan subtitle dengan style modern
+- VLC Player dengan animasi loading dan buffering indicator
+- Fixed error "invalid command name" saat close player
+- Semua after callbacks di-cancel dengan benar saat window ditutup
+
+---
 
 ## 2025-12-31
 
