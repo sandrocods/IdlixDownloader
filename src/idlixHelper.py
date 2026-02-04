@@ -690,7 +690,7 @@ class IdlixHelper:
                 'message': str(error_get_subtitle)
             }
 
-    def play_m3u8(self):
+    def play_m3u8(self, subtitle_file=None):
         try:
             if not self.m3u8_url:
                 return {
@@ -701,14 +701,30 @@ class IdlixHelper:
             # Construct Headers (Checking logic for both players)
             user_agent = self.request.headers.get("User-Agent", "Mozilla/5.0")
             
+            # Determine subtitle file - check multiple possible locations
+            safe_title = self.get_safe_title()
+            if subtitle_file is None:
+                # Check for various subtitle file patterns
+                possible_subs = [
+                    safe_title + ".srt",
+                ]
+                # Also check for labeled subtitles (from multi-subtitle selection)
+                if self.selected_subtitle:
+                    possible_subs.insert(0, f"{safe_title}_{self.selected_subtitle['label']}.srt")
+                
+                for sub_path in possible_subs:
+                    if os.path.exists(sub_path):
+                        subtitle_file = sub_path
+                        break
+            
             # --- Try VLC Player (GUI) first ---
             try:
                 from src.vlc_player import play_video_standalone
                 
-                safe_title = self.get_safe_title()
-                subtitle_file = safe_title + ".srt" if (self.is_subtitle and os.path.exists(safe_title + ".srt")) else None
+                logger.info("Launching VLC Player...")
+                if subtitle_file:
+                    logger.info(f"Loading subtitle: {subtitle_file}")
                 
-                logger.info("DeepMind: Attempting to launch VLC Player...")
                 success = play_video_standalone(self, self.m3u8_url, subtitle_file, self.video_name)
                 
                 if success:
@@ -733,8 +749,6 @@ class IdlixHelper:
             if cookies:
                 cookie_str = "; ".join([f"{k}={v}" for k, v in cookies.items()])
                 headers += f"Cookie: {cookie_str}\r\n"
-            
-            safe_title = self.get_safe_title()
 
             command = [
                 "ffplay",
@@ -753,8 +767,8 @@ class IdlixHelper:
                 "-autoexit"
             ]
 
-            if self.is_subtitle:
-                 command.extend(["-vf", "subtitles=" + safe_title + ".srt"])
+            if subtitle_file and os.path.exists(subtitle_file):
+                 command.extend(["-vf", "subtitles=" + subtitle_file])
 
             logger.info(f"FFplay Command: {' '.join(command)}")
 
@@ -780,9 +794,16 @@ class IdlixHelper:
                     'message': "FFplay not found. Please ensure ffmpeg is installed/downloaded correctly."
                 }
 
-            if self.is_subtitle and os.path.exists(safe_title + '.srt'):
-                os.remove(safe_title + '.srt')
-                os.remove(safe_title + '.vtt')
+            # Cleanup subtitle files after FFplay closes
+            if subtitle_file and os.path.exists(subtitle_file):
+                try:
+                    os.remove(subtitle_file)
+                    vtt_path = subtitle_file.rsplit('.', 1)[0] + '.vtt'
+                    if os.path.exists(vtt_path):
+                        os.remove(vtt_path)
+                    logger.info("Temporary subtitle files cleaned up.")
+                except Exception as e:
+                    logger.warning(f"Failed to cleanup subtitles: {e}")
 
             return {
                 'status': True,

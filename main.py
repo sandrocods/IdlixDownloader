@@ -1,7 +1,6 @@
 from src.idlixHelper import IdlixHelper, logger
 from prettytable import PrettyTable
 import inquirer
-import threading
 import time
 import os
 
@@ -37,14 +36,6 @@ def retry(func, *args, **kwargs):
     if not last_result.get("message"):
         last_result["message"] = "Maximum retry reached"
     return last_result
-
-
-def play_m3u8_thread(idlix_helper):
-    result = idlix_helper.play_m3u8()
-    if result.get("status"):
-        logger.success("Playing Success")
-    else:
-        logger.error(f"Error playing m3u8: {result.get('message')}")
 
 
 def select_subtitle(idlix_helper):
@@ -166,10 +157,12 @@ def process_content(idlix_helper, url: str, mode: str, is_episode: bool = False)
         
         logger.info(f"▶️  Playing {video_data['video_name']} ...")
 
-        th = threading.Thread(target=play_m3u8_thread, args=(idlix_helper,))
-        th.daemon = True
-        th.start()
-        th.join(timeout=5)
+        # Run VLC directly on main thread (Tkinter requirement)
+        result = idlix_helper.play_m3u8()
+        if result.get("status"):
+            logger.success("Playback finished")
+        else:
+            logger.error(f"Error playing: {result.get('message')}")
     else:
         if subtitle_id:
             sub_result = idlix_helper.download_selected_subtitle(subtitle_id)

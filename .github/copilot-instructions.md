@@ -35,10 +35,12 @@ Dual-interface (CLI + GUI) video downloader and player for the IDLIX streaming p
 ### TV Series Support
 
 Series and episodes use different URL patterns:
+
 - Series page: `https://tv12.idlixku.com/tvseries/series-name/`
 - Episode: `https://tv12.idlixku.com/episode/series-season-X-episode-Y/`
 
 Key methods for series:
+
 - `get_featured_series()` - Get featured series from homepage
 - `get_series_info(url)` - Parse seasons and episodes from series page
 - `get_episode_data(url)` - Get video metadata for an episode
@@ -47,6 +49,7 @@ Key methods for series:
 ### Multi-Subtitle Support
 
 Subtitles can have multiple languages. Format: `[Indonesian]url,[English]url`
+
 - `get_available_subtitles()` - Returns list of available subtitles with labels
 - `download_selected_subtitle(id)` - Download specific subtitle by ID
 - User selects subtitle before play/download

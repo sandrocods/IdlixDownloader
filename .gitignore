@@ -1,3 +1,4 @@
+.github/copilot-instructions.md
 .venv
 */__pycache__
 src/ffmpeg
@@ -6,3 +7,4 @@ tmp
 *.mp4
 *.srt
 *.vtt
+*.log
