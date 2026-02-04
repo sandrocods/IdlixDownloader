@@ -8,7 +8,7 @@ charset-normalizer==2.1.0
 click==8.1.3
 colorama==0.4.5
 cryptography==42.0.5
-curl_cffi==0.7.1
+cloudscraper==1.2.71
 EasyProcess==1.1
 editor==1.6.6
 entrypoint2==1.1
@@ -54,3 +54,4 @@ wcwidth==0.2.5
 Werkzeug==2.2.3
 win32-setctime==1.1.0
 xmod==1.8.1
+python-vlc==3.0.21203
