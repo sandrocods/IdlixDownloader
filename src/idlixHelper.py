@@ -38,6 +38,10 @@ class IdlixHelper:
         self.video_name = None
         self.is_subtitle = None
         self.variant_playlist = None
+        self.subtitles = []  # Multi-subtitle support
+        self.selected_subtitle = None
+        self.content_type = None  # 'movie' or 'episode'
+        self.series_info = None  # Series metadata
         self.request = cloudscraper.create_scraper(
             browser={
                 'browser': 'chrome',
@@ -155,6 +159,175 @@ class IdlixHelper:
                 'status': False,
                 'message': str(error_get_home)
             }
+
+    def get_featured_series(self):
+        """Get featured TV series from homepage"""
+        try:
+            request = self.request.get(
+                url=self.BASE_WEB_URL,
+                timeout=10
+            )
+            if request.status_code == 200:
+                bs = BeautifulSoup(request.text, 'html.parser')
+                tmp_featured = []
+                for featured in bs.find('div', {'class': 'items featured'}).find_all('article'):
+                    href = featured.find('a').get('href')
+                    if '/tvseries/' in href:
+                        tmp_featured.append({
+                            "url": href,
+                            "title": featured.find('h3').text,
+                            "year": featured.find('span').text,
+                            "type": "tvseries",
+                            "poster": featured.find('img').get('src'),
+                        })
+                return {
+                    'status': True,
+                    'featured_series': tmp_featured
+                }
+            else:
+                return {
+                    'status': False,
+                    'message': 'Failed to get featured series'
+                }
+        except Exception as e:
+            return {
+                'status': False,
+                'message': str(e)
+            }
+
+    def get_series_info(self, url):
+        """Get series info including seasons and episodes"""
+        try:
+            request = self.request.get(url=url, timeout=10)
+            if request.status_code != 200:
+                return {'status': False, 'message': 'Failed to fetch series page'}
+            
+            bs = BeautifulSoup(request.text, 'html.parser')
+            
+            # Get series title
+            series_title = bs.find('h1').text.strip() if bs.find('h1') else "Unknown Series"
+            poster = bs.find('img', {'itemprop': 'image'})
+            poster_url = poster.get('src') if poster else None
+            
+            # Get seasons
+            seasons = []
+            season_tabs = bs.find('div', {'id': 'seasons'})
+            if season_tabs:
+                for season_div in season_tabs.find_all('div', {'class': 'se-c'}):
+                    season_title = season_div.find('span', {'class': 'se-t'})
+                    season_num = season_title.text.strip() if season_title else "1"
+                    
+                    episodes = []
+                    episode_list = season_div.find('ul', {'class': 'episodios'})
+                    if episode_list:
+                        for ep in episode_list.find_all('li'):
+                            ep_link = ep.find('a')
+                            ep_num_div = ep.find('div', {'class': 'numerando'})
+                            ep_title_div = ep.find('div', {'class': 'episodiotitle'})
+                            
+                            if ep_link:
+                                ep_num = ep_num_div.text.strip() if ep_num_div else ""
+                                ep_title = ep_title_div.find('a').text.strip() if ep_title_div and ep_title_div.find('a') else ""
+                                episodes.append({
+                                    'url': ep_link.get('href'),
+                                    'number': ep_num,
+                                    'title': ep_title,
+                                    'full_title': f"{ep_num} - {ep_title}" if ep_title else ep_num
+                                })
+                    
+                    seasons.append({
+                        'season': season_num,
+                        'episodes': episodes
+                    })
+            
+            self.series_info = {
+                'title': series_title,
+                'poster': poster_url,
+                'seasons': seasons,
+                'url': url
+            }
+            
+            return {
+                'status': True,
+                'series_info': self.series_info
+            }
+        except Exception as e:
+            return {
+                'status': False,
+                'message': str(e)
+            }
+
+    def get_episode_data(self, url):
+        """Get episode data - similar to get_video_data but for episodes"""
+        if not url:
+            return {'status': False, 'message': 'URL is required'}
+        
+        try:
+            self.content_type = 'episode'
+            request = self.request.get(url=url, timeout=10)
+            
+            if request.status_code == 200:
+                bs = BeautifulSoup(request.text, 'html.parser')
+                
+                # Get video ID
+                meta_counter = bs.find('meta', {'id': 'dooplay-ajax-counter'})
+                if meta_counter:
+                    self.video_id = meta_counter.get('data-postid')
+                
+                # Get episode title
+                title_tag = bs.find('h1') or bs.find('meta', {'itemprop': 'name'})
+                if title_tag:
+                    self.video_name = title_tag.text.strip() if hasattr(title_tag, 'text') else title_tag.get('content', 'Unknown Episode')
+                else:
+                    self.video_name = "Unknown Episode"
+                
+                # Get poster
+                poster_img = bs.find('img', {'itemprop': 'image'})
+                self.poster = poster_img.get('src') if poster_img else None
+                
+                return {
+                    'status': True,
+                    'video_id': self.video_id,
+                    'video_name': self.video_name,
+                    'poster': self.poster,
+                    'content_type': 'episode'
+                }
+            else:
+                return {'status': False, 'message': 'Failed to get episode data'}
+        except Exception as e:
+            return {'status': False, 'message': str(e)}
+
+    def get_embed_url_episode(self):
+        """Get embed URL for episode (type=tv instead of movie)"""
+        if not self.video_id:
+            return {'status': False, 'message': 'Video ID is required'}
+        
+        try:
+            request = self.request.post(
+                url=self.BASE_WEB_URL + "wp-admin/admin-ajax.php",
+                data={
+                    "action": "doo_player_ajax",
+                    "post": self.video_id,
+                    "nume": "1",
+                    "type": "tv",  # Different from movie
+                }
+            )
+            if request.status_code == 200 and request.json().get('embed_url'):
+                self.embed_url = CryptoJsAes.decrypt(
+                    request.json().get('embed_url'),
+                    dec(
+                        request.json().get('key'),
+                        json.loads(request.json().get('embed_url')).get('m')
+                    )
+                )
+                return {
+                    'status': True,
+                    'embed_url': self.embed_url
+                }
+            else:
+                return {'status': False, 'message': 'Failed to get embed URL'}
+        except Exception as e:
+            return {'status': False, 'message': str(e)}
 
     def get_video_data(self, url):
         if not url:
@@ -336,6 +509,129 @@ class IdlixHelper:
 
     def get_safe_title(self):
         return re.sub(r'[\\/*?:"<>|&]', "", self.video_name).replace(" ", "_")
+
+    def get_available_subtitles(self):
+        """Get list of available subtitles without downloading"""
+        try:
+            if not self.embed_url:
+                return {'status': False, 'message': 'Embed URL is required'}
+
+            request = self.request.post(
+                url='https://jeniusplay.com/player/index.php',
+                params={"data": self.embed_url, "do": "getVideo"},
+                headers={
+                    "Host": "jeniusplay.com",
+                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                },
+                data={"hash": self.embed_url, "r": self.BASE_WEB_URL},
+            )
+            
+            # Parse multiple subtitles: format can be "[Label]URL,[Label2]URL2" or just "URL"
+            regex_subtitle = re.search(r'var playerjsSubtitle = "(.*)";', request.text)
+            
+            if not regex_subtitle:
+                self.subtitles = []
+                return {'status': False, 'message': 'No subtitles found'}
+            
+            subtitle_str = regex_subtitle.group(1)
+            self.subtitles = []
+            
+            # Parse subtitle format: can be "[Indonesian]url,[English]url" or single URL
+            if ',' in subtitle_str and '[' in subtitle_str:
+                # Multiple subtitles with labels
+                parts = subtitle_str.split(',')
+                for i, part in enumerate(parts):
+                    match = re.match(r'\[([^\]]+)\](.*)', part.strip())
+                    if match:
+                        label = match.group(1)
+                        url = match.group(2)
+                        if 'https://' in url:
+                            url = "https://" + url.split("https://")[1]
+                        self.subtitles.append({
+                            'id': str(i),
+                            'label': label,
+                            'url': url
+                        })
+            elif '[' in subtitle_str:
+                # Single subtitle with label
+                match = re.match(r'\[([^\]]+)\](.*)', subtitle_str.strip())
+                if match:
+                    label = match.group(1)
+                    url = match.group(2)
+                    if 'https://' in url:
+                        url = "https://" + url.split("https://")[1]
+                    self.subtitles.append({
+                        'id': '0',
+                        'label': label,
+                        'url': url
+                    })
+            else:
+                # Single URL without label
+                url = subtitle_str
+                if 'https://' in url:
+                    url = "https://" + url.split("https://")[1]
+                self.subtitles.append({
+                    'id': '0',
+                    'label': 'Default',
+                    'url': url
+                })
+            
+            if self.subtitles:
+                return {
+                    'status': True,
+                    'subtitles': self.subtitles,
+                    'count': len(self.subtitles)
+                }
+            else:
+                return {'status': False, 'message': 'No subtitles found'}
+                
+        except Exception as e:
+            return {'status': False, 'message': str(e)}
+
+    def download_selected_subtitle(self, subtitle_id=None):
+        """Download a specific subtitle by ID, or first available if not specified"""
+        try:
+            if not self.subtitles:
+                # Try to get subtitles first
+                result = self.get_available_subtitles()
+                if not result.get('status'):
+                    return result
+            
+            if not self.subtitles:
+                return {'status': False, 'message': 'No subtitles available'}
+            
+            # Select subtitle
+            selected = None
+            if subtitle_id is not None:
+                for sub in self.subtitles:
+                    if sub['id'] == str(subtitle_id):
+                        selected = sub
+                        break
+            
+            if not selected:
+                selected = self.subtitles[0]  # Default to first
+            
+            self.selected_subtitle = selected
+            safe_title = self.get_safe_title()
+            
+            # Download VTT
+            subtitle_request = requests.get(url=selected['url'])
+            vtt_file = f"{safe_title}_{selected['label']}.vtt"
+            srt_file = f"{safe_title}_{selected['label']}.srt"
+            
+            with open(vtt_file, 'wb') as f:
+                f.write(subtitle_request.content)
+            
+            self.convert_vtt_to_srt(vtt_file)
+            self.is_subtitle = True
+            
+            return {
+                'status': True,
+                'subtitle': srt_file,
+                'label': selected['label']
+            }
+        except Exception as e:
+            return {'status': False, 'message': str(e)}
 
     def get_subtitle(self, download=True):
         try:

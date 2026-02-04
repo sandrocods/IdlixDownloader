@@ -143,5 +143,110 @@ class TestIdlixHelper(unittest.TestCase):
         self.assertTrue(result['status'])
         self.assertEqual(result['m3u8_url'], "https://server.com/playlist.m3u8")
 
+    def test_get_episode_data_no_url(self):
+        """Test get_episode_data with no URL"""
+        result = self.helper.get_episode_data(None)
+        self.assertFalse(result['status'])
+        self.assertEqual(result['message'], 'URL is required')
+
+    def test_get_episode_data_success(self):
+        """Test get_episode_data with valid response"""
+        url = "https://tv12.idlixku.com/episode/vikings-season-6-episode-12/"
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = """
+        <meta id="dooplay-ajax-counter" data-postid="99999">
+        <h1>Vikings Season 6 Episode 12</h1>
+        <img itemprop="image" src="http://img.url/ep_poster.jpg">
+        """
+        self.helper.request.get.return_value = mock_response
+
+        result = self.helper.get_episode_data(url)
+        
+        self.assertTrue(result['status'])
+        self.assertEqual(result['video_id'], "99999")
+        self.assertEqual(result['content_type'], 'episode')
+
+    @patch('src.idlixHelper.CryptoJsAes.decrypt')
+    @patch('src.idlixHelper.dec')
+    def test_get_embed_url_episode_success(self, mock_dec, mock_decrypt):
+        """Test get_embed_url_episode uses type=tv"""
+        self.helper.video_id = "99999"
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "embed_url": '{"m": "dummy_m"}',
+            "key": "dummy_key"
+        }
+        self.helper.request.post.return_value = mock_response
+        mock_dec.return_value = "passphrase"
+        mock_decrypt.return_value = "https://jeniusplay.com/player/index.php?data=ep_hash"
+
+        result = self.helper.get_embed_url_episode()
+        
+        self.assertTrue(result['status'])
+        # Verify type=tv was used in the request
+        call_args = self.helper.request.post.call_args
+        self.assertEqual(call_args[1]['data']['type'], 'tv')
+
+    def test_get_available_subtitles_single(self):
+        """Test parsing single subtitle without label"""
+        self.helper.embed_url = "test_hash"
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = 'var playerjsSubtitle = "https://sub.server.com/subtitle.vtt";'
+        self.helper.request.post.return_value = mock_response
+
+        result = self.helper.get_available_subtitles()
+        
+        self.assertTrue(result['status'])
+        self.assertEqual(result['count'], 1)
+        self.assertEqual(result['subtitles'][0]['label'], 'Default')
+
+    def test_get_available_subtitles_multi(self):
+        """Test parsing multiple subtitles with labels"""
+        self.helper.embed_url = "test_hash"
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = 'var playerjsSubtitle = "[Indonesian]https://sub.server.com/id.vtt,[English]https://sub.server.com/en.vtt";'
+        self.helper.request.post.return_value = mock_response
+
+        result = self.helper.get_available_subtitles()
+        
+        self.assertTrue(result['status'])
+        self.assertEqual(result['count'], 2)
+        self.assertEqual(result['subtitles'][0]['label'], 'Indonesian')
+        self.assertEqual(result['subtitles'][1]['label'], 'English')
+
+    def test_get_series_info_success(self):
+        """Test get_series_info parsing"""
+        url = "https://tv12.idlixku.com/tvseries/vikings/"
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = """
+        <h1>Vikings</h1>
+        <img itemprop="image" src="http://img.url/series_poster.jpg">
+        <div id="seasons">
+            <div class="se-c">
+                <span class="se-t">1</span>
+                <ul class="episodios">
+                    <li>
+                        <a href="https://tv12.idlixku.com/episode/vikings-season-1-episode-1/">
+                        <div class="numerando">1 - 1</div>
+                        <div class="episodiotitle"><a>Rites of Passage</a></div>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+        """
+        self.helper.request.get.return_value = mock_response
+
+        result = self.helper.get_series_info(url)
+        
+        self.assertTrue(result['status'])
+        self.assertEqual(result['series_info']['title'], 'Vikings')
+        self.assertEqual(len(result['series_info']['seasons']), 1)
+
 if __name__ == '__main__':
     unittest.main()
