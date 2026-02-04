@@ -42,6 +42,7 @@ class IdlixHelper:
         self.selected_subtitle = None
         self.content_type = None  # 'movie' or 'episode'
         self.series_info = None  # Series metadata
+        self.episode_meta = None  # Episode metadata for organized downloads
         self.request = cloudscraper.create_scraper(
             browser={
                 'browser': 'chrome',
@@ -209,6 +210,13 @@ class IdlixHelper:
             poster = bs.find('img', {'itemprop': 'image'})
             poster_url = poster.get('src') if poster else None
             
+            # Get year from page (try multiple selectors)
+            year_span = bs.find('span', {'class': 'date'}) or bs.find('span', text=re.compile(r'\d{4}'))
+            series_year = year_span.text.strip() if year_span else "2025"
+            # Extract just the year if it's embedded in other text
+            year_match = re.search(r'(\d{4})', series_year)
+            series_year = year_match.group(1) if year_match else "2025"
+            
             # Get seasons
             seasons = []
             season_tabs = bs.find('div', {'id': 'seasons'})
@@ -228,11 +236,16 @@ class IdlixHelper:
                             if ep_link:
                                 ep_num = ep_num_div.text.strip() if ep_num_div else ""
                                 ep_title = ep_title_div.find('a').text.strip() if ep_title_div and ep_title_div.find('a') else ""
+                                # Parse season and episode numbers from 'number' field (format: "S - E")
+                                season_ep = ep_num.split(' - ') if ' - ' in ep_num else [season_num, '1']
+                                ep_number = season_ep[1] if len(season_ep) > 1 else '1'
                                 episodes.append({
                                     'url': ep_link.get('href'),
                                     'number': ep_num,
                                     'title': ep_title,
-                                    'full_title': f"{ep_num} - {ep_title}" if ep_title else ep_num
+                                    'full_title': f"{ep_num} - {ep_title}" if ep_title else ep_num,
+                                    'season_num': season_num,
+                                    'episode_num': ep_number
                                 })
                     
                     seasons.append({
@@ -242,6 +255,7 @@ class IdlixHelper:
             
             self.series_info = {
                 'title': series_title,
+                'year': series_year,
                 'poster': poster_url,
                 'seasons': seasons,
                 'url': url
@@ -256,6 +270,19 @@ class IdlixHelper:
                 'status': False,
                 'message': str(e)
             }
+
+    def set_episode_meta(self, series_title, series_year, season_num, episode_num):
+        """Set episode metadata for organized folder structure"""
+        # Remove year from title if already present (e.g., "Zootopia+ (2022)" -> "Zootopia+")
+        clean_title = re.sub(r'\s*\(\d{4}\)\s*$', '', series_title).strip()
+        clean_title = re.sub(r'[\\/*?:"<>|]', '', clean_title)  # Clean invalid chars
+        
+        self.episode_meta = {
+            'series_title': clean_title,
+            'series_year': series_year,
+            'season_num': int(season_num) if str(season_num).isdigit() else 1,
+            'episode_num': int(episode_num) if str(episode_num).isdigit() else 1
+        }
 
     def get_episode_data(self, url):
         """Get episode data - similar to get_video_data but for episodes"""
@@ -469,33 +496,99 @@ class IdlixHelper:
                     'message': 'M3U8 URL is required'
                 }
             
-            # Create tmp directory if not exists
-            if not os.path.exists(os.getcwd() + '/tmp/'):
-                os.makedirs(os.getcwd() + '/tmp/', exist_ok=True)
-
-            # --- Automatic Subtitle Download ---
-            logger.info("Checking for subtitles...")
-            sub_res = self.get_subtitle(download=True)
-            if sub_res.get('status'):
-                logger.success(f"Subtitle downloaded: {sub_res.get('subtitle')}")
-                # The get_subtitle already names it as safe_title.srt
+            # Determine output directory and filename
+            if self.episode_meta:
+                # Organized folder structure for series
+                series_folder = f"{self.episode_meta['series_title']} ({self.episode_meta['series_year']})"
+                season_folder = f"Season {self.episode_meta['season_num']:02d}"
+                output_dir = os.path.join(os.getcwd(), series_folder, season_folder)
+                # Filename without year: "Series Name - s01e01"
+                output_name = f"{self.episode_meta['series_title']} - s{self.episode_meta['season_num']:02d}e{self.episode_meta['episode_num']:02d}"
+                logger.info(f"📁 Output: {series_folder}/{season_folder}/{output_name}.mp4")
             else:
-                logger.warning(f"No subtitle found or failed to download: {sub_res.get('message')}")
+                # Default: current directory for movies
+                output_dir = os.getcwd()
+                output_name = self.get_safe_title()
+            
+            # Create output directory
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Create tmp directory if not exists
+            tmp_dir = os.path.join(os.getcwd(), 'tmp')
+            os.makedirs(tmp_dir, exist_ok=True)
+
+            # --- Automatic Subtitle Download (only if not already downloaded) ---
+            subtitle_path = None
+            if not self.is_subtitle:
+                logger.info("Checking for subtitles...")
+                sub_res = self.get_subtitle(download=True, output_dir=output_dir, output_name=output_name)
+                if sub_res.get('status'):
+                    subtitle_path = sub_res.get('subtitle')
+                    logger.success(f"Subtitle downloaded: {subtitle_path}")
+                else:
+                    logger.warning(f"No subtitle found or failed to download: {sub_res.get('message')}")
+            else:
+                # Subtitle already downloaded - find the file
+                safe_title = self.get_safe_title()
+                if self.selected_subtitle:
+                    # Check in current directory first (where download_selected_subtitle saves it)
+                    old_srt = f"{safe_title}_{self.selected_subtitle['label']}.srt"
+                    if os.path.exists(old_srt):
+                        if self.episode_meta:
+                            # Move to output folder for series
+                            new_srt = os.path.join(output_dir, f"{output_name}.srt")
+                            shutil.move(old_srt, new_srt)
+                            subtitle_path = new_srt
+                            logger.info(f"Subtitle moved to: {new_srt}")
+                        else:
+                            subtitle_path = old_srt
+                    else:
+                        # Check in output_dir
+                        new_srt = os.path.join(output_dir, f"{output_name}.srt")
+                        if os.path.exists(new_srt):
+                            subtitle_path = new_srt
+                else:
+                    # Default subtitle (no label)
+                    default_srt = f"{safe_title}.srt"
+                    if os.path.exists(default_srt):
+                        subtitle_path = default_srt
+                
+                logger.info(f"Subtitle already downloaded: {subtitle_path}")
             # ------------------------------------
 
+            # Check subtitle mode
+            subtitle_mode = getattr(self, 'subtitle_mode', 'separate')
+            logger.info(f"Subtitle mode: {subtitle_mode}")
+            
+            if subtitle_mode in ['hardcode', 'softcode'] and subtitle_path and os.path.exists(subtitle_path):
+                # Use FFmpeg for subtitle embedding
+                logger.info(f"Using FFmpeg for {subtitle_mode} subtitle...")
+                logger.info(f"Subtitle file: {subtitle_path}")
+                result = self._download_with_ffmpeg(output_dir, output_name, subtitle_path, subtitle_mode)
+                if result.get('status'):
+                    # Cleanup tmp and srt file (both hardcode and softcode embed subtitle)
+                    shutil.rmtree(tmp_dir, ignore_errors=True)
+                    if os.path.exists(subtitle_path):
+                        os.remove(subtitle_path)
+                        logger.info("Subtitle file cleaned up (embedded in video)")
+                    return result
+                else:
+                    logger.warning(f"FFmpeg failed: {result.get('message')}. Falling back to standard download...")
+            
+            # Standard download with m3u8_To_MP4
             logger.info(f"Starting download for {self.video_name}...")
             m3u8_To_MP4.multithread_download(
                 m3u8_uri=self.m3u8_url,
                 max_num_workers=10,
-                mp4_file_name=self.video_name,
-                mp4_file_dir=os.getcwd() + '/',
-                tmpdir=os.getcwd() + '/tmp/'
+                mp4_file_name=output_name,
+                mp4_file_dir=output_dir + '/',
+                tmpdir=tmp_dir + '/'
             )
             
             # Cleanup tmp folder
-            shutil.rmtree(os.getcwd() + '/tmp/', ignore_errors=True)
+            shutil.rmtree(tmp_dir, ignore_errors=True)
             
-            final_path = os.getcwd() + '/' + self.video_name + '.mp4'
+            final_path = os.path.join(output_dir, output_name + '.mp4')
             return {
                 'status': True,
                 'message': 'Download success',
@@ -507,8 +600,146 @@ class IdlixHelper:
                 'message': str(error_download_m3u8)
             }
 
+    def _download_with_ffmpeg(self, output_dir, output_name, subtitle_path, mode='softcode'):
+        """Download video with FFmpeg and embed/hardcode subtitle"""
+        try:
+            user_agent = self.request.headers.get("User-Agent", "Mozilla/5.0")
+            referer = self.BASE_STATIC_HEADERS.get("Referer", "")
+            
+            # Build headers string for FFmpeg
+            headers = f"Referer: {referer}\r\nUser-Agent: {user_agent}\r\n"
+            
+            # Add cookies if any
+            cookies = self.request.cookies.get_dict()
+            if cookies:
+                cookie_str = "; ".join([f"{k}={v}" for k, v in cookies.items()])
+                headers += f"Cookie: {cookie_str}\r\n"
+            
+            # Use absolute path for subtitle
+            subtitle_abs = os.path.abspath(subtitle_path)
+            
+            # Determine subtitle language from selected_subtitle or filename
+            sub_lang = "ind"  # Default Indonesian
+            sub_title = "Indonesian"
+            if self.selected_subtitle:
+                label = self.selected_subtitle.get('label', 'Indonesian')
+                sub_title = label
+                # Map common languages to ISO 639-2 codes
+                lang_map = {
+                    'indonesian': 'ind', 'indonesia': 'ind', 'bahasa': 'ind',
+                    'english': 'eng', 'inggris': 'eng',
+                    'malay': 'msa', 'melayu': 'msa',
+                    'chinese': 'chi', 'mandarin': 'chi',
+                    'japanese': 'jpn', 'jepang': 'jpn',
+                    'korean': 'kor', 'korea': 'kor',
+                    'thai': 'tha',
+                    'vietnamese': 'vie',
+                    'arabic': 'ara',
+                    'spanish': 'spa',
+                    'french': 'fra',
+                    'german': 'deu',
+                    'portuguese': 'por',
+                    'russian': 'rus',
+                    'hindi': 'hin',
+                }
+                for key, code in lang_map.items():
+                    if key in label.lower():
+                        sub_lang = code
+                        break
+            
+            if mode == 'hardcode':
+                # Hardcode: burn subtitle into video (re-encode, slower)
+                output_file = os.path.join(output_dir, output_name + '.mp4')
+                
+                # Escape subtitle path for FFmpeg filter (Windows path fix)
+                sub_escaped = subtitle_abs.replace('\\', '/').replace(':', r'\:').replace("'", r"\'")
+                
+                command = [
+                    'ffmpeg', '-y',
+                    '-protocol_whitelist', 'file,http,https,tcp,tls,crypto',
+                    '-headers', headers,
+                    '-allowed_extensions', 'ALL',
+                    '-allowed_segment_extensions', 'ALL',
+                    '-extension_picky', '0',
+                    '-f', 'hls',
+                    '-i', self.m3u8_url,
+                    '-vf', f"subtitles='{sub_escaped}'",
+                    '-c:v', 'libx264',
+                    '-preset', 'fast',
+                    '-crf', '23',
+                    '-c:a', 'aac',
+                    '-b:a', '128k',
+                    output_file
+                ]
+            else:
+                # Softcode: embed as subtitle track (fast, no re-encode)
+                output_file = os.path.join(output_dir, output_name + '.mkv')
+                
+                command = [
+                    'ffmpeg', '-y',
+                    '-protocol_whitelist', 'file,http,https,tcp,tls,crypto',
+                    '-headers', headers,
+                    '-allowed_extensions', 'ALL',
+                    '-allowed_segment_extensions', 'ALL',
+                    '-extension_picky', '0',
+                    '-f', 'hls',
+                    '-i', self.m3u8_url,
+                    '-i', subtitle_abs,
+                    '-map', '0:v',
+                    '-map', '0:a',
+                    '-map', '1:0',
+                    '-c:v', 'copy',
+                    '-c:a', 'copy',
+                    '-c:s', 'srt',
+                    '-metadata:s:s:0', f'language={sub_lang}',
+                    '-metadata:s:s:0', f'title={sub_title}',
+                    '-disposition:s:0', 'default',  # Set as default subtitle
+                    output_file
+                ]
+
+            logger.info(f"FFmpeg {'hardcoding' if mode == 'hardcode' else 'embedding'} subtitle...")
+            logger.info(f"This may take a while for long videos...")
+            
+            # Run FFmpeg with progress
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            # Wait for completion
+            stdout, stderr = process.communicate()
+            
+            if process.returncode == 0:
+                logger.success(f"FFmpeg download complete: {output_file}")
+                return {
+                    'status': True,
+                    'message': 'Download success with FFmpeg',
+                    'path': output_file
+                }
+            else:
+                # Log more detailed error
+                error_lines = stderr.strip().split('\n')[-5:]  # Last 5 lines
+                error_msg = '\n'.join(error_lines)
+                logger.error(f"FFmpeg error:\n{error_msg}")
+                return {
+                    'status': False,
+                    'message': f"FFmpeg error: {error_msg[:300]}"
+                }
+                
+        except Exception as e:
+            return {
+                'status': False,
+                'message': str(e)
+            }
+
+    def set_subtitle_mode(self, mode):
+        """Set subtitle mode: 'separate', 'softcode', or 'hardcode'"""
+        self.subtitle_mode = mode
+
     def get_safe_title(self):
-        return re.sub(r'[\\/*?:"<>|&]', "", self.video_name).replace(" ", "_")
+        return re.sub(r'[\\/*?:"<>|&]', "", self.video_name)
 
     def get_available_subtitles(self):
         """Get list of available subtitles without downloading"""
@@ -623,6 +854,13 @@ class IdlixHelper:
                 f.write(subtitle_request.content)
             
             self.convert_vtt_to_srt(vtt_file)
+            
+            # Delete VTT file after conversion (keep only SRT)
+            try:
+                os.remove(vtt_file)
+            except:
+                pass
+            
             self.is_subtitle = True
             
             return {
@@ -633,7 +871,7 @@ class IdlixHelper:
         except Exception as e:
             return {'status': False, 'message': str(e)}
 
-    def get_subtitle(self, download=True):
+    def get_subtitle(self, download=True, output_dir=None, output_name=None):
         try:
             if not self.embed_url:
                 return {
@@ -657,20 +895,40 @@ class IdlixHelper:
                 },
             )
             regex_subtitle = re.search(r"var playerjsSubtitle = \"(.*)\";", request.text)
-            safe_title = self.get_safe_title()
+            
+            # Use output_name if provided, otherwise use safe_title
+            if output_name:
+                base_name = output_name
+            else:
+                base_name = self.get_safe_title()
+            
+            # Use output_dir if provided, otherwise current directory
+            if output_dir:
+                vtt_path = os.path.join(output_dir, base_name + '.vtt')
+                srt_path = os.path.join(output_dir, base_name + '.srt')
+            else:
+                vtt_path = base_name + '.vtt'
+                srt_path = base_name + '.srt'
             
             if regex_subtitle:
                 if download:
                     subtitle_request = requests.get(
                         url="https://" + regex_subtitle.group(1).split("https://")[1],
                     )
-                    with open(safe_title + '.vtt', 'wb') as subtitle_file:
+                    with open(vtt_path, 'wb') as subtitle_file:
                         subtitle_file.write(subtitle_request.content)
-                    self.convert_vtt_to_srt(safe_title + '.vtt')
+                    self.convert_vtt_to_srt(vtt_path)
+                    
+                    # Delete VTT file after conversion (keep only SRT)
+                    try:
+                        os.remove(vtt_path)
+                    except:
+                        pass
+                    
                     self.is_subtitle = True
                     return {
                         'status': True,
-                        'subtitle': safe_title + '.srt',
+                        'subtitle': srt_path,
                     }
 
                 self.is_subtitle = True
@@ -689,6 +947,22 @@ class IdlixHelper:
                 'status': False,
                 'message': str(error_get_subtitle)
             }
+
+    def _move_subtitle_to_output(self, output_dir, output_name):
+        """Move downloaded subtitle to organized output folder"""
+        if not self.selected_subtitle:
+            return
+        
+        safe_title = self.get_safe_title()
+        old_srt = f"{safe_title}_{self.selected_subtitle['label']}.srt"
+        new_srt = os.path.join(output_dir, f"{output_name}.srt")
+        
+        try:
+            if os.path.exists(old_srt):
+                shutil.move(old_srt, new_srt)
+                logger.info(f"Subtitle moved to: {new_srt}")
+        except Exception as e:
+            logger.warning(f"Failed to move subtitle: {e}")
 
     def play_m3u8(self, subtitle_file=None):
         try:
@@ -817,8 +1091,136 @@ class IdlixHelper:
 
     @staticmethod
     def convert_vtt_to_srt(vtt_file):
-        convert_file = ConvertFile(vtt_file, "utf-8")
-        convert_file.convert()
+        """Convert VTT to SRT with proper timestamp handling and X-TIMESTAMP-MAP offset"""
+        srt_file = vtt_file.rsplit('.', 1)[0] + '.srt'
+        
+        try:
+            with open(vtt_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            lines = content.strip().split('\n')
+            output_lines = []
+            cue_count = 0
+            i = 0
+            offset_ms = 0  # Offset to subtract from timestamps
+            
+            # Parse X-TIMESTAMP-MAP if present
+            # Format: X-TIMESTAMP-MAP=MPEGTS:900000,LOCAL:00:00:00.000
+            # MPEGTS is in 90kHz clock units
+            for line in lines[:10]:  # Check first 10 lines for header
+                if 'X-TIMESTAMP-MAP' in line:
+                    # Extract MPEGTS value
+                    mpegts_match = re.search(r'MPEGTS[=:](\d+)', line)
+                    local_match = re.search(r'LOCAL[=:](\d{2}):(\d{2}):(\d{2})\.?(\d{3})?', line)
+                    
+                    if mpegts_match:
+                        mpegts = int(mpegts_match.group(1))
+                        # Convert 90kHz to milliseconds
+                        mpegts_ms = mpegts / 90  # 90kHz clock
+                        
+                        local_ms = 0
+                        if local_match:
+                            h, m, s = int(local_match.group(1)), int(local_match.group(2)), int(local_match.group(3))
+                            ms = int(local_match.group(4)) if local_match.group(4) else 0
+                            local_ms = (h * 3600 + m * 60 + s) * 1000 + ms
+                        
+                        # Offset = MPEGTS timestamp - LOCAL timestamp
+                        offset_ms = mpegts_ms - local_ms
+                        logger.debug(f"VTT X-TIMESTAMP-MAP: MPEGTS={mpegts} ({mpegts_ms}ms), LOCAL={local_ms}ms, Offset={offset_ms}ms")
+                    break
+            
+            # Skip header lines
+            while i < len(lines):
+                line = lines[i].strip()
+                if line.startswith('WEBVTT') or line.startswith('NOTE') or \
+                   line.startswith('STYLE') or line.startswith('X-TIMESTAMP-MAP') or \
+                   line.startswith('Kind:') or line.startswith('Language:') or \
+                   line == '':
+                    i += 1
+                    continue
+                break
+            
+            def parse_timestamp(ts):
+                """Parse VTT timestamp to milliseconds"""
+                # Format: HH:MM:SS.mmm or MM:SS.mmm
+                parts = ts.replace(',', '.').split(':')
+                if len(parts) == 3:
+                    h, m, s = parts
+                else:
+                    h = 0
+                    m, s = parts
+                
+                s_parts = str(s).split('.')
+                sec = int(s_parts[0])
+                ms = int(s_parts[1]) if len(s_parts) > 1 else 0
+                
+                return (int(h) * 3600 + int(m) * 60 + sec) * 1000 + ms
+            
+            def format_timestamp(ms):
+                """Format milliseconds to SRT timestamp"""
+                if ms < 0:
+                    ms = 0
+                h = ms // 3600000
+                m = (ms % 3600000) // 60000
+                s = (ms % 60000) // 1000
+                ms_part = ms % 1000
+                return f"{h:02d}:{m:02d}:{s:02d},{ms_part:03d}"
+            
+            # Process cues
+            while i < len(lines):
+                line = lines[i].strip()
+                
+                if not line:
+                    i += 1
+                    continue
+                
+                # Check for timestamp line
+                if '-->' in line:
+                    cue_count += 1
+                    
+                    # Parse timestamps
+                    # Remove positioning info first
+                    ts_line = line.split('-->') 
+                    if len(ts_line) >= 2:
+                        start_ts = ts_line[0].strip().split()[0] if ts_line[0].strip() else "00:00:00.000"
+                        end_part = ts_line[1].strip().split()
+                        end_ts = end_part[0] if end_part else "00:00:00.000"
+                        
+                        # Parse and adjust timestamps
+                        start_ms = parse_timestamp(start_ts) - offset_ms
+                        end_ms = parse_timestamp(end_ts) - offset_ms
+                        
+                        # Format for SRT
+                        new_timestamp = f"{format_timestamp(start_ms)} --> {format_timestamp(end_ms)}"
+                        
+                        output_lines.append(str(cue_count))
+                        output_lines.append(new_timestamp)
+                    
+                    i += 1
+                    
+                    # Get subtitle text
+                    while i < len(lines) and lines[i].strip():
+                        text = re.sub(r'<[^>]+>', '', lines[i])
+                        output_lines.append(text)
+                        i += 1
+                    
+                    output_lines.append('')
+                else:
+                    i += 1
+            
+            # Write SRT file
+            with open(srt_file, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(output_lines))
+            
+            if offset_ms > 0:
+                logger.info(f"Subtitle adjusted by -{offset_ms/1000:.1f}s offset")
+            logger.debug(f"Converted {vtt_file} to {srt_file} ({cue_count} cues)")
+            
+        except Exception as e:
+            logger.warning(f"Manual VTT conversion failed, using library: {e}")
+            # Fallback to library
+            convert_file = ConvertFile(vtt_file, "utf-8")
+            convert_file.convert()
 
     def set_m3u8_url(self, m3u8_url):
         if "https://jeniusplay.com" not in m3u8_url:

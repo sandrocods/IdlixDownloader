@@ -127,13 +127,13 @@ class ModernVLCPlayer(tk.Toplevel):
         )
         
         # --- Controls Overlay (YouTube-style) ---
-        self.controls_overlay = tk.Frame(self.main_container, bg=self.CONTROLS_BG, height=90)
+        self.controls_overlay = tk.Frame(self.main_container, bg=self.CONTROLS_BG, height=105)
         self.controls_overlay.pack(fill="x", side="bottom")
         self.controls_overlay.pack_propagate(False)
         
         # Progress bar container
         progress_container = tk.Frame(self.controls_overlay, bg=self.CONTROLS_BG)
-        progress_container.pack(fill="x", padx=10, pady=(10, 5))
+        progress_container.pack(fill="x", padx=10, pady=(8, 3))
         
         # Custom progress bar using Canvas (taller for easier clicking)
         self.progress_canvas = tk.Canvas(
@@ -218,12 +218,12 @@ class ModernVLCPlayer(tk.Toplevel):
         # Keyboard shortcuts hint
         hint_label = tk.Label(
             self.controls_overlay,
-            text="Space: Play/Pause | ←→: Seek 10s | ↑↓: Volume | F: Fullscreen | G/H: Subtitle sync ±50ms",
+            text="Space: Play/Pause | ←→: Seek 10s | ↑↓: Volume | F: Fullscreen | G/H: Sub sync",
             font=("Segoe UI", 8),
             fg="#666666",
             bg=self.CONTROLS_BG
         )
-        hint_label.pack(side="bottom", pady=(0, 5))
+        hint_label.pack(side="bottom", pady=(0, 8))
         
         # Embed VLC into video frame
         self.update_idletasks()
@@ -458,10 +458,22 @@ class ModernVLCPlayer(tk.Toplevel):
         """Toggle fullscreen mode"""
         is_fs = self.attributes("-fullscreen")
         self.attributes("-fullscreen", not is_fs)
+        
+        # Hide controls immediately when entering fullscreen
+        if not is_fs:  # We just entered fullscreen
+            self.controls_overlay.pack_forget()
+            self.controls_visible = False
+        else:  # We just exited fullscreen
+            self.controls_overlay.pack(fill="x", side="bottom")
+            self.controls_visible = True
     
     def _exit_fullscreen(self):
         """Exit fullscreen"""
         self.attributes("-fullscreen", False)
+        # Show controls when exiting fullscreen
+        if not self.controls_visible:
+            self.controls_overlay.pack(fill="x", side="bottom")
+            self.controls_visible = True
     
     def _on_mouse_motion(self, event):
         """Show controls on mouse motion (fullscreen mode)"""

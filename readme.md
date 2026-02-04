@@ -37,7 +37,10 @@ Program mendukung Windows dan Linux.
 | FFplay Fallback          | Fallback ke FFplay jika VLC tidak tersedia              | ✔      |
 | Download Folder Button   | Membuka folder hasil download                           | ✔      |
 | Log Console GUI          | Log real-time dengan warna                              | ✔      |
-| Batch Download           | Download semua episode dalam satu season (CLI)          | ✔      |
+| Batch Download           | Download semua episode dalam satu season                | ✔      |
+| Subtitle Mode Options    | Separate (.srt), Softcode (MKV), Hardcode (burn-in)     | ✔      |
+| Organized Folder         | Series download ke folder terorganisir                  | ✔      |
+| Plex Compatible          | Subtitle metadata dengan language code                  | ✔      |
 
 ---
 
@@ -168,6 +171,43 @@ Dengan retry logic 3x dan output tabel PrettyTable.
 
 ---
 
+# 📁 Struktur Folder Download
+
+### Movies
+
+File movie disimpan di folder kerja saat ini:
+
+```
+Movie Title.mp4
+Movie Title.srt  (jika pilih Separate)
+```
+
+### TV Series (Organized)
+
+Series otomatis terorganisir dalam folder:
+
+```
+Series Name (Year)/
+├── Season 01/
+│   ├── Series Name - s01e01.mkv
+│   ├── Series Name - s01e02.mkv
+│   └── ...
+└── Season 02/
+    └── ...
+```
+
+### Subtitle Mode Options
+
+| Mode         | Output          | Kecepatan | Keterangan                               |
+| ------------ | --------------- | --------- | ---------------------------------------- |
+| **Separate** | `.mp4` + `.srt` | ⚡ Cepat  | File subtitle terpisah                   |
+| **Softcode** | `.mkv`          | ⚡ Cepat  | Subtitle track di dalam MKV, bisa on/off |
+| **Hardcode** | `.mp4`          | 🐢 Lambat | Subtitle burn-in permanen, re-encode     |
+
+> 💡 **Untuk Plex**: Pilih **Softcode** agar subtitle terdeteksi otomatis dan bisa di-toggle on/off.
+
+---
+
 # Auto Install FFmpeg (Windows Only)
 
 Program akan otomatis:
@@ -193,14 +233,17 @@ Program akan otomatis:
 
 # Changelog
 
-## 2026-02-04 — TV Series & Modern UI Update
+## 2026-02-04 — TV Series, Subtitle Modes & Organized Download
 
 Added:
 
 - **TV Series Support** - Browse featured series, seasons, dan episodes
 - **Episode Browser** - Dialog untuk pilih season dan episode
 - **Multi-Subtitle Selection** - Pilih dari beberapa bahasa subtitle
-- **Batch Episode Download** - Download semua episode dalam season (CLI)
+- **Subtitle Mode Options** - Separate (.srt), Softcode (embed MKV), Hardcode (burn-in)
+- **Organized Folder Structure** - Series download ke `Series (Year)/Season XX/`
+- **Batch Episode Download** - Download semua episode dalam season (CLI + GUI)
+- **Plex Compatible** - Subtitle dengan metadata language code (ISO 639-2)
 - **Modern Dark Theme** - Netflix-style UI dengan warna gelap
 - **YouTube-style VLC Player** - Loading spinner, modern controls
 - **Auto-hide Controls** - Controls tersembunyi di fullscreen, muncul saat mouse bergerak
@@ -212,6 +255,8 @@ Updated:
 - Tab Movies/Series untuk navigasi mudah
 - Dialog resolution dan subtitle dengan style modern
 - VLC Player dengan animasi loading dan buffering indicator
+- FFmpeg dengan `-allowed_segment_extensions ALL` untuk HLS obfuscation
+- VTT to SRT dengan X-TIMESTAMP-MAP offset handling
 - Fixed error "invalid command name" saat close player
 - Semua after callbacks di-cancel dengan benar saat window ditutup
 

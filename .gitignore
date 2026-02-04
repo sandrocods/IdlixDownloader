@@ -5,6 +5,7 @@ src/ffmpeg
 tmp
 *.zip
 *.mp4
+*.mkv
 *.srt
 *.vtt
 *.log

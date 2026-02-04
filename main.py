@@ -78,6 +78,30 @@ def select_subtitle(idlix_helper):
     return answer["subtitle"].split(" - ")[0]
 
 
+def select_subtitle_mode():
+    """Let user select how to handle subtitle during download"""
+    question = [
+        inquirer.List(
+            "mode",
+            message="📝 Subtitle mode",
+            choices=[
+                "Separate File (.srt) - Fast, file terpisah",
+                "Softcode (Embed) - Fast, subtitle track di MKV",
+                "Hardcode (Burn-in) - Slow, permanent di video"
+            ],
+            carousel=True
+        )
+    ]
+    answer = inquirer.prompt(question)
+    
+    if "Separate" in answer["mode"]:
+        return "separate"
+    elif "Softcode" in answer["mode"]:
+        return "softcode"
+    else:
+        return "hardcode"
+
+
 def select_resolution(idlix_helper, m3u8):
     """Let user select video resolution"""
     if not m3u8.get("is_variant_playlist"):
@@ -107,8 +131,16 @@ def select_resolution(idlix_helper, m3u8):
             break
 
 
-def process_content(idlix_helper, url: str, mode: str, is_episode: bool = False):
-    """Process movie or episode for play/download"""
+def process_content(idlix_helper, url: str, mode: str, is_episode: bool = False, episode_info: dict = None, 
+                    preset_resolution: str = None, preset_subtitle: str = None):
+    """Process movie or episode for play/download
+    
+    Args:
+        episode_info: Optional dict with keys: series_title, series_year, season_num, episode_num
+                      Used for organized folder structure when downloading series
+        preset_resolution: Pre-selected resolution ID for batch downloads
+        preset_subtitle: Pre-selected subtitle ID for batch downloads
+    """
     
     # 1. Get video data
     if is_episode:
@@ -121,6 +153,15 @@ def process_content(idlix_helper, url: str, mode: str, is_episode: bool = False)
         return False
 
     logger.info(f"📽️  {video_data['video_name']}")
+    
+    # Set episode metadata for organized folder structure
+    if episode_info and mode == "download":
+        idlix_helper.set_episode_meta(
+            series_title=episode_info.get('series_title', 'Unknown'),
+            series_year=episode_info.get('series_year', '2025'),
+            season_num=episode_info.get('season_num', 1),
+            episode_num=episode_info.get('episode_num', 1)
+        )
 
     # 2. Get embed URL
     if is_episode:
@@ -142,11 +183,23 @@ def process_content(idlix_helper, url: str, mode: str, is_episode: bool = False)
 
     logger.success(f"M3U8 URL obtained")
 
-    # 4. Select resolution
-    select_resolution(idlix_helper, m3u8)
+    # 4. Select resolution (use preset if provided)
+    if preset_resolution and m3u8.get("is_variant_playlist"):
+        for v in m3u8["variant_playlist"]:
+            if str(v["id"]) == preset_resolution:
+                idlix_helper.set_m3u8_url(v["uri"])
+                logger.info(f"Using preset resolution: {v['resolution']}")
+                break
+    else:
+        select_resolution(idlix_helper, m3u8)
 
-    # 5. Handle subtitle selection
-    subtitle_id = select_subtitle(idlix_helper)
+    # 5. Handle subtitle selection (use preset if provided)
+    if preset_subtitle is not None:
+        subtitle_id = preset_subtitle
+        if subtitle_id:
+            logger.info(f"Using preset subtitle")
+    else:
+        subtitle_id = select_subtitle(idlix_helper)
     
     # 6. Play or Download
     if mode == "play":
@@ -164,7 +217,12 @@ def process_content(idlix_helper, url: str, mode: str, is_episode: bool = False)
         else:
             logger.error(f"Error playing: {result.get('message')}")
     else:
+        # Ask for subtitle mode FIRST (before downloading)
         if subtitle_id:
+            sub_mode = select_subtitle_mode()
+            idlix_helper.set_subtitle_mode(sub_mode)
+            
+            # Only download subtitle now
             sub_result = idlix_helper.download_selected_subtitle(subtitle_id)
             if sub_result.get("status"):
                 logger.success(f"Subtitle downloaded: {sub_result.get('label')}")
@@ -251,13 +309,95 @@ def process_series(idlix_helper, url: str, mode: str):
             total = len(selected_season['episodes'])
             logger.info(f"Downloading {total} episodes from Season {selected_season['season']}...")
             
+            # === Pre-select resolution and subtitle for first episode ===
+            first_ep = selected_season['episodes'][0]
+            logger.info("Setting up resolution and subtitle for all episodes...")
+            
+            # Get first episode data to determine available resolutions/subtitles
+            first_helper = IdlixHelper()
+            video_data = retry(first_helper.get_episode_data, first_ep['url'])
+            if not video_data.get("status"):
+                logger.error("Failed to get first episode data")
+                return False
+            
+            embed = retry(first_helper.get_embed_url_episode)
+            if not embed.get("status"):
+                logger.error("Failed to get embed URL")
+                return False
+            
+            m3u8 = retry(first_helper.get_m3u8_url)
+            if not m3u8.get("status"):
+                logger.error("Failed to get M3U8 URL")
+                return False
+            
+            # Select resolution once
+            preset_resolution = None
+            if m3u8.get("is_variant_playlist"):
+                logger.info("Select resolution for ALL episodes:")
+                choices = [f"{v['id']} - {v['resolution']}" for v in m3u8["variant_playlist"]]
+                question = [
+                    inquirer.List(
+                        "variant",
+                        message="📺 Select resolution (applies to all episodes)",
+                        choices=choices,
+                        carousel=True
+                    )
+                ]
+                answer = inquirer.prompt(question)
+                preset_resolution = answer["variant"].split(" - ")[0]
+                logger.success(f"Resolution {answer['variant'].split(' - ')[1]} will be used for all episodes")
+            
+            # Select subtitle once
+            preset_subtitle = None
+            subs_result = first_helper.get_available_subtitles()
+            if subs_result.get("status"):
+                subtitles = subs_result.get("subtitles", [])
+                if subtitles:
+                    logger.info("Select subtitle for ALL episodes:")
+                    choices = [f"{s['id']} - {s['label']}" for s in subtitles]
+                    choices.append("No Subtitle")
+                    question = [
+                        inquirer.List(
+                            "subtitle",
+                            message="🗣️  Select subtitle (applies to all episodes)",
+                            choices=choices,
+                            carousel=True
+                        )
+                    ]
+                    answer = inquirer.prompt(question)
+                    if answer["subtitle"] != "No Subtitle":
+                        preset_subtitle = answer["subtitle"].split(" - ")[0]
+                        logger.success(f"Subtitle {answer['subtitle'].split(' - ')[1]} will be used for all episodes")
+                    else:
+                        preset_subtitle = ""  # Empty string means no subtitle
+            
+            print(f"\n{'='*50}")
+            logger.info("Starting batch download...")
+            print(f"{'='*50}\n")
+            
+            # Now download all episodes with preset settings
             for i, ep in enumerate(selected_season['episodes']):
                 print(f"\n{'='*50}")
                 logger.info(f"Episode {i+1}/{total}: {ep['full_title']}")
                 
                 # Create new helper for each episode to avoid state issues
                 ep_helper = IdlixHelper()
-                success = process_content(ep_helper, ep['url'], "download", is_episode=True)
+                
+                # Build episode info for organized folder structure
+                episode_info = {
+                    'series_title': series_info['title'],
+                    'series_year': series_info.get('year', '2025'),
+                    'season_num': ep.get('season_num', selected_season['season']),
+                    'episode_num': ep.get('episode_num', i + 1)
+                }
+                
+                success = process_content(
+                    ep_helper, ep['url'], "download", 
+                    is_episode=True, 
+                    episode_info=episode_info,
+                    preset_resolution=preset_resolution,
+                    preset_subtitle=preset_subtitle if preset_subtitle != "" else None
+                )
                 
                 if not success:
                     logger.warning(f"Failed to download episode {ep['full_title']}")
@@ -293,7 +433,17 @@ def process_series(idlix_helper, url: str, mode: str):
     
     logger.info(f"Selected: {selected_episode['full_title']}")
     
-    return process_content(idlix_helper, selected_episode['url'], mode, is_episode=True)
+    # Build episode info for organized folder structure
+    episode_info = None
+    if mode == "download":
+        episode_info = {
+            'series_title': series_info['title'],
+            'series_year': series_info.get('year', '2025'),
+            'season_num': selected_episode.get('season_num', selected_season['season']),
+            'episode_num': selected_episode.get('episode_num', selected_ep_idx + 1)
+        }
+    
+    return process_content(idlix_helper, selected_episode['url'], mode, is_episode=True, episode_info=episode_info)
 
 
 def show_featured_table(featured, title="Featured List"):
