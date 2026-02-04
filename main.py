@@ -132,14 +132,15 @@ def select_resolution(idlix_helper, m3u8):
 
 
 def process_content(idlix_helper, url: str, mode: str, is_episode: bool = False, episode_info: dict = None, 
-                    preset_resolution: str = None, preset_subtitle: str = None):
+                    preset_resolution: str = None, preset_subtitle: str = None, preset_sub_mode: str = None):
     """Process movie or episode for play/download
     
     Args:
         episode_info: Optional dict with keys: series_title, series_year, season_num, episode_num
                       Used for organized folder structure when downloading series
         preset_resolution: Pre-selected resolution ID for batch downloads
-        preset_subtitle: Pre-selected subtitle ID for batch downloads
+        preset_subtitle: Pre-selected subtitle ID for batch downloads (empty string = no subtitle)
+        preset_sub_mode: Pre-selected subtitle mode for batch downloads
     """
     
     # 1. Get video data
@@ -195,11 +196,16 @@ def process_content(idlix_helper, url: str, mode: str, is_episode: bool = False,
 
     # 5. Handle subtitle selection (use preset if provided)
     if preset_subtitle is not None:
-        subtitle_id = preset_subtitle
+        subtitle_id = preset_subtitle if preset_subtitle != "" else None
         if subtitle_id:
             logger.info(f"Using preset subtitle")
+        else:
+            logger.info(f"Subtitle skipped (preset: no subtitle)")
+            idlix_helper.set_skip_subtitle(True)
     else:
         subtitle_id = select_subtitle(idlix_helper)
+        if subtitle_id is None:
+            idlix_helper.set_skip_subtitle(True)
     
     # 6. Play or Download
     if mode == "play":
@@ -217,9 +223,15 @@ def process_content(idlix_helper, url: str, mode: str, is_episode: bool = False,
         else:
             logger.error(f"Error playing: {result.get('message')}")
     else:
-        # Ask for subtitle mode FIRST (before downloading)
+        # Download mode - only ask for subtitle mode if subtitle selected
         if subtitle_id:
-            sub_mode = select_subtitle_mode()
+            # Use preset mode if provided, otherwise ask
+            if preset_sub_mode:
+                sub_mode = preset_sub_mode
+                logger.info(f"Using preset subtitle mode: {sub_mode}")
+            else:
+                sub_mode = select_subtitle_mode()
+            
             idlix_helper.set_subtitle_mode(sub_mode)
             
             # Only download subtitle now
@@ -349,6 +361,7 @@ def process_series(idlix_helper, url: str, mode: str):
             
             # Select subtitle once
             preset_subtitle = None
+            preset_sub_mode = None
             subs_result = first_helper.get_available_subtitles()
             if subs_result.get("status"):
                 subtitles = subs_result.get("subtitles", [])
@@ -368,8 +381,13 @@ def process_series(idlix_helper, url: str, mode: str):
                     if answer["subtitle"] != "No Subtitle":
                         preset_subtitle = answer["subtitle"].split(" - ")[0]
                         logger.success(f"Subtitle {answer['subtitle'].split(' - ')[1]} will be used for all episodes")
+                        
+                        # Ask for subtitle mode ONCE (only if subtitle selected)
+                        preset_sub_mode = select_subtitle_mode()
+                        logger.success(f"Subtitle mode '{preset_sub_mode}' will be used for all episodes")
                     else:
                         preset_subtitle = ""  # Empty string means no subtitle
+                        logger.info("No subtitle will be downloaded for all episodes")
             
             print(f"\n{'='*50}")
             logger.info("Starting batch download...")
@@ -396,7 +414,8 @@ def process_series(idlix_helper, url: str, mode: str):
                     is_episode=True, 
                     episode_info=episode_info,
                     preset_resolution=preset_resolution,
-                    preset_subtitle=preset_subtitle if preset_subtitle != "" else None
+                    preset_subtitle=preset_subtitle,
+                    preset_sub_mode=preset_sub_mode
                 )
                 
                 if not success:

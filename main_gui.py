@@ -649,11 +649,14 @@ class IdlixGUI:
                             ep_helper.set_m3u8_url(v["uri"])
                             break
                 
-                # Apply preset subtitle
+                # Apply preset subtitle or skip if no subtitle selected
                 if preset_subtitle and preset_subtitle != "":
                     sub_result = ep_helper.download_selected_subtitle(preset_subtitle)
                     if sub_result.get("status"):
                         logger.info(f"Subtitle: {sub_result.get('label')}")
+                elif preset_subtitle == "":
+                    # User explicitly chose "No Subtitle"
+                    ep_helper.set_skip_subtitle(True)
                 
                 # Apply preset subtitle mode
                 if preset_sub_mode:
@@ -958,6 +961,9 @@ class IdlixGUI:
                     if sub_result.get("status"):
                         subtitle_file = sub_result.get("subtitle")
                         logger.success(f"Subtitle: {sub_result.get('label')}")
+                else:
+                    # User chose "No Subtitle"
+                    idlix.set_skip_subtitle(True)
             
             # Play or download
             if mode == "play":
@@ -1063,6 +1069,9 @@ class IdlixGUI:
                     if sub_result.get("status"):
                         subtitle_file = sub_result.get("subtitle")
                         logger.success(f"Subtitle: {sub_result.get('label')}")
+                else:
+                    # User chose "No Subtitle" for episode
+                    idlix.set_skip_subtitle(True)
             
             # Play or download
             if mode == "play":

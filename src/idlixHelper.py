@@ -40,6 +40,7 @@ class IdlixHelper:
         self.variant_playlist = None
         self.subtitles = []  # Multi-subtitle support
         self.selected_subtitle = None
+        self.skip_subtitle = False  # Flag when user explicitly chooses "No Subtitle"
         self.content_type = None  # 'movie' or 'episode'
         self.series_info = None  # Series metadata
         self.episode_meta = None  # Episode metadata for organized downloads
@@ -519,7 +520,7 @@ class IdlixHelper:
 
             # --- Automatic Subtitle Download (only if not already downloaded) ---
             subtitle_path = None
-            if not self.is_subtitle:
+            if not self.is_subtitle and not self.skip_subtitle:
                 logger.info("Checking for subtitles...")
                 sub_res = self.get_subtitle(download=True, output_dir=output_dir, output_name=output_name)
                 if sub_res.get('status'):
@@ -527,6 +528,8 @@ class IdlixHelper:
                     logger.success(f"Subtitle downloaded: {subtitle_path}")
                 else:
                     logger.warning(f"No subtitle found or failed to download: {sub_res.get('message')}")
+            elif self.skip_subtitle:
+                logger.info("Subtitle skipped (user choice)")
             else:
                 # Subtitle already downloaded - find the file
                 safe_title = self.get_safe_title()
@@ -737,6 +740,10 @@ class IdlixHelper:
     def set_subtitle_mode(self, mode):
         """Set subtitle mode: 'separate', 'softcode', or 'hardcode'"""
         self.subtitle_mode = mode
+
+    def set_skip_subtitle(self, skip=True):
+        """Set flag to skip subtitle download"""
+        self.skip_subtitle = skip
 
     def get_safe_title(self):
         return re.sub(r'[\\/*?:"<>|&]', "", self.video_name)
