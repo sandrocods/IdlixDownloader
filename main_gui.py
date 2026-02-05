@@ -22,6 +22,7 @@ import requests
 
 from src.idlixHelper import IdlixHelper, logger
 from src.vlc_player import VLCPlayerWindow
+from src.download_manager import DownloadManager
 
 # ============================================================
 # THEME COLORS (Dark Mode)
@@ -156,6 +157,8 @@ class IdlixGUI:
         self.root.minsize(1100, 600)
 
         self.idlix = IdlixHelper()
+        self.active_helper = None  # Track currently downloading helper for cancel
+        self.cancel_requested = False  # Global cancel flag
         self.featured_movies = []
         self.featured_series = []
         self.poster_images = []
@@ -168,7 +171,9 @@ class IdlixGUI:
 
         self._create_ui()
         self._setup_logger()
-        self.refresh_content()
+        
+        # Load content in background to avoid blocking UI
+        threading.Thread(target=self.refresh_content, daemon=True).start()
 
     def _create_ui(self):
         """Create the main UI layout"""
@@ -250,6 +255,26 @@ class IdlixGUI:
             pady=10
         )
         self.log_box.pack(fill="both", expand=True)
+        
+        # Progress bar (hidden by default)
+        self.progress_frame = ModernFrame(right_panel)
+        
+        self.progress_label = ModernLabel(self.progress_frame, text="Downloading...", style="dim")
+        self.progress_label.pack(anchor="w", pady=(5, 2))
+        
+        self.progress_bar = ttk.Progressbar(
+            self.progress_frame,
+            mode='determinate',
+            length=330,
+            maximum=100
+        )
+        self.progress_bar.pack(fill="x", pady=(0, 5))
+        
+        self.progress_status = ModernLabel(self.progress_frame, text="0%", style="dim")
+        self.progress_status.pack(anchor="w")
+        
+        self.cancel_btn = ModernButton(self.progress_frame, "❌ Cancel", self.cancel_download, style="secondary")
+        self.cancel_btn.pack(fill="x", pady=(5, 0))
         
         # Clear log button
         ModernButton(right_panel, "🗑️ Clear Log", self.clear_log, style="secondary").pack(fill="x", pady=(10, 0))
@@ -519,6 +544,10 @@ class IdlixGUI:
     def batch_download_season(self, series_info, season):
         """Download all episodes in a season with preset resolution/subtitle"""
         def task():
+            # Reset cancel flags
+            self.cancel_requested = False
+            self.idlix.cancel_flag = False
+            
             total = len(season['episodes'])
             logger.info(f"📥 Batch download: {total} episodes from Season {season['season']}")
             
@@ -528,20 +557,12 @@ class IdlixGUI:
             
             # Get first episode data to determine available resolutions/subtitles
             first_helper = IdlixHelper()
-            video_data = retry(first_helper.get_episode_data, first_ep['url'])
-            if not video_data.get("status"):
+            result = DownloadManager.prepare_episode_download(first_helper, first_ep['url'])
+            if not result:
                 logger.error("Failed to get first episode data")
                 return
             
-            embed = retry(first_helper.get_embed_url_episode)
-            if not embed.get("status"):
-                logger.error("Failed to get embed URL")
-                return
-            
-            m3u8 = retry(first_helper.get_m3u8_url)
-            if not m3u8.get("status"):
-                logger.error("Failed to get M3U8 URL")
-                return
+            video_data, embed, m3u8 = result
             
             # Select resolution once
             preset_resolution = None
@@ -566,22 +587,23 @@ class IdlixGUI:
             subs_result = first_helper.get_available_subtitles()
             if subs_result.get("status") and subs_result.get("subtitles"):
                 logger.info("Select subtitle for ALL episodes:")
-                subtitle_id = None
+                sub_holder = {"value": None, "done": False}
                 def ask_sub():
-                    nonlocal subtitle_id
-                    subtitle_id = self.select_subtitle_dialog(subs_result["subtitles"])
+                    sub_holder["value"] = self.select_subtitle_dialog(subs_result["subtitles"])
+                    sub_holder["done"] = True
                 self.root.after(0, ask_sub)
-                while subtitle_id is None:
+                while not sub_holder["done"]:
                     time.sleep(0.1)
                 
-                if subtitle_id:
-                    preset_subtitle = subtitle_id
+                if sub_holder["value"]:
+                    preset_subtitle = sub_holder["value"]
                     for s in subs_result["subtitles"]:
-                        if s["id"] == subtitle_id:
+                        if s["id"] == preset_subtitle:
                             logger.success(f"Subtitle {s['label']} will be used for all episodes")
                             break
                 else:
                     preset_subtitle = ""  # Empty string = no subtitle
+                    logger.info("No subtitle will be downloaded for all episodes")
             
             # Select subtitle mode once (if subtitle selected)
             preset_sub_mode = None
@@ -600,13 +622,23 @@ class IdlixGUI:
             logger.info("Starting batch download...")
             logger.info("=" * 50)
             
+            # Show progress bar AFTER all dialogs complete
+            self.root.after(0, lambda: self.show_progress("Batch downloading episodes..."))
+            
             # Now download all episodes with preset settings
             for i, ep in enumerate(season['episodes']):
+                # Check cancel BEFORE any processing
+                if self.cancel_requested or self.idlix.cancel_flag:
+                    logger.warning("Batch download cancelled by user")
+                    break
+                
                 logger.info(f"\n{'='*50}")
                 logger.info(f"Episode {i+1}/{total}: {ep['full_title']}")
                 
                 # Create new helper for each episode
                 ep_helper = IdlixHelper()
+                ep_helper.cancel_flag = self.cancel_requested  # Sync cancel state
+                self.active_helper = ep_helper  # Register for cancel button
                 
                 # Build episode info for organized folder structure
                 episode_info = {
@@ -616,31 +648,13 @@ class IdlixGUI:
                     'episode_num': ep.get('episode_num', i + 1)
                 }
                 
-                # Get episode data
-                video_data = retry(ep_helper.get_episode_data, ep['url'])
-                if not video_data.get("status"):
-                    logger.warning(f"Failed to get episode data, skipping...")
+                # === PREPARE: Get all metadata ===
+                result = DownloadManager.prepare_episode_download(ep_helper, ep['url'], episode_info)
+                if not result:
+                    logger.warning(f"Failed to prepare episode, skipping...")
                     continue
                 
-                # Set episode metadata
-                ep_helper.set_episode_meta(
-                    series_title=episode_info['series_title'],
-                    series_year=episode_info['series_year'],
-                    season_num=episode_info['season_num'],
-                    episode_num=episode_info['episode_num']
-                )
-                
-                # Get embed URL
-                embed = retry(ep_helper.get_embed_url_episode)
-                if not embed.get("status"):
-                    logger.warning(f"Failed to get embed URL, skipping...")
-                    continue
-                
-                # Get M3U8 URL
-                m3u8 = retry(ep_helper.get_m3u8_url)
-                if not m3u8.get("status"):
-                    logger.warning(f"Failed to get M3U8 URL, skipping...")
-                    continue
+                video_data, embed, m3u8 = result
                 
                 # Apply preset resolution
                 if preset_resolution and m3u8.get("is_variant_playlist"):
@@ -649,27 +663,33 @@ class IdlixGUI:
                             ep_helper.set_m3u8_url(v["uri"])
                             break
                 
-                # Apply preset subtitle or skip if no subtitle selected
-                if preset_subtitle and preset_subtitle != "":
-                    sub_result = ep_helper.download_selected_subtitle(preset_subtitle)
-                    if sub_result.get("status"):
-                        logger.info(f"Subtitle: {sub_result.get('label')}")
-                elif preset_subtitle == "":
-                    # User explicitly chose "No Subtitle"
-                    ep_helper.set_skip_subtitle(True)
+                # Set progress callback
+                def progress_update(percent, status=""):
+                    self.root.after(0, lambda p=percent, s=status: self.update_progress(p, s))
+                ep_helper.progress_callback = progress_update
+                self.root.after(0, lambda idx=i+1, t=total: self.show_progress(f"Episode {idx}/{t}"))
                 
-                # Apply preset subtitle mode
-                if preset_sub_mode:
-                    ep_helper.set_subtitle_mode(preset_sub_mode)
+                # Check cancel one more time before download
+                if self.cancel_requested or self.idlix.cancel_flag:
+                    logger.warning("Batch download cancelled by user")
+                    break
                 
-                # Download
-                result = ep_helper.download_m3u8()
-                if result.get("status"):
-                    logger.success(f"✅ Downloaded: {ep['full_title']}")
-                else:
-                    logger.warning(f"Failed to download: {result.get('message')}")
+                # === DOWNLOAD: Use unified logic ===
+                download_result = DownloadManager.execute_download(
+                    ep_helper, video_data, preset_resolution, preset_subtitle, preset_sub_mode
+                )
+                
+                if not download_result.get("status"):
+                    logger.warning(f"Failed to download: {download_result.get('message')}")
+                    # Check if error is cancellation
+                    if 'cancelled' in download_result.get('message', '').lower():
+                        break
             
+            self.active_helper = None  # Clear active helper
             logger.success(f"🎉 Season {season['season']} download complete!")
+            
+            # Hide progress bar after batch complete
+            self.root.after(0, self.hide_progress)
         
         threading.Thread(target=task, daemon=True).start()
 
@@ -825,6 +845,8 @@ class IdlixGUI:
     def refresh_content(self):
         """Refresh both movies and series"""
         def task():
+            # Clear existing posters first
+            self.root.after(0, lambda: self.show_poster_grid([], "movie"))
             logger.info("Loading featured content...")
             
             # Load movies
@@ -888,7 +910,11 @@ class IdlixGUI:
     def handle_url(self, url, mode):
         """Handle URL - detect type and process"""
         if "/episode/" in url:
-            self.process_episode(url, mode)
+            # For episode URL, try to extract series info for folder structure
+            if mode == "download":
+                self._process_episode_with_folder(url, mode)
+            else:
+                self.process_episode(url, mode)
         elif "/tvseries/" in url:
             # Browse series
             def task():
@@ -902,33 +928,132 @@ class IdlixGUI:
         else:
             self.process_movie(url, mode)
 
+    def _process_episode_with_folder(self, url, mode):
+        """Process episode URL and create folder structure by extracting info from URL/page"""
+        import re
+        
+        def task():
+            # Create new helper
+            idlix = IdlixHelper()
+            idlix.cancel_flag = False
+            self.active_helper = idlix  # Register for cancel button
+            self.cancel_requested = False  # Reset cancel flag
+            
+            # Try to extract season/episode from URL pattern
+            # Example: https://tv12.idlixku.com/episode/series-name-season-1-episode-5/
+            match = re.search(r'/episode/(.+)-season-(\d+)-episode-(\d+)', url)
+            
+            episode_info = None
+            if match:
+                # Extract from URL first
+                season_num = int(match.group(2))
+                episode_num = int(match.group(3))
+                
+                # Get episode data to extract proper series info from page
+                video_data = retry(idlix.get_episode_data, url)
+                if video_data.get("status") and video_data.get('series_info'):
+                    series_info = video_data['series_info']
+                    series_title = series_info.get('series_title', match.group(1).replace('-', ' ').title())
+                    series_year = series_info.get('series_year', '2025')
+                else:
+                    # Fallback to URL parsing
+                    series_title = match.group(1).replace('-', ' ').title()
+                    series_year = '2025'
+                
+                episode_info = {
+                    'series_title': series_title,
+                    'series_year': series_year,
+                    'season_num': season_num,
+                    'episode_num': episode_num
+                }
+                logger.info(f"📁 Detected: {series_title} ({series_year}) S{season_num:02d}E{episode_num:02d}")
+            
+            # === PREPARE: Get all metadata ===
+            result = DownloadManager.prepare_episode_download(idlix, url, episode_info)
+            if not result:
+                return
+            
+            video_data, embed, m3u8 = result
+            
+            # === DIALOGS: Ask user for preferences ===
+            resolution_id = None
+            if m3u8.get("is_variant_playlist"):
+                result_holder = {"value": None, "done": False}
+                def ask():
+                    result_holder["value"] = self.select_resolution_dialog(m3u8["variant_playlist"])
+                    result_holder["done"] = True
+                self.root.after(0, ask)
+                while not result_holder["done"]:
+                    time.sleep(0.1)
+                
+                selected_id = result_holder["value"]
+                if selected_id:
+                    resolution_id = selected_id
+                    for v in m3u8["variant_playlist"]:
+                        if str(v["id"]) == selected_id:
+                            idlix.set_m3u8_url(v["uri"])
+                            logger.success(f"Resolution: {v['resolution']}")
+                            break
+            
+            subtitle_id = None
+            subtitle_mode = 'separate'
+            subs = idlix.get_available_subtitles()
+            if subs.get("status") and subs.get("subtitles"):
+                result_holder = {"value": None, "done": False}
+                def ask_sub():
+                    result_holder["value"] = self.select_subtitle_dialog(subs["subtitles"])
+                    result_holder["done"] = True
+                self.root.after(0, ask_sub)
+                while not result_holder["done"]:
+                    time.sleep(0.1)
+                
+                subtitle_id = result_holder["value"] if result_holder["value"] else ""  # "" = no subtitle
+                
+                # Ask for subtitle mode if subtitle selected
+                if subtitle_id and subtitle_id != "":
+                    result_holder = {"value": None, "done": False}
+                    def ask_mode():
+                        result_holder["value"] = self.select_subtitle_mode_dialog()
+                        result_holder["done"] = True
+                    self.root.after(0, ask_mode)
+                    while not result_holder["done"]:
+                        time.sleep(0.1)
+                    subtitle_mode = result_holder["value"]
+            
+            # Show progress bar AFTER all dialogs complete
+            def progress_update(percent, status=""):
+                self.root.after(0, lambda p=percent, s=status: self.update_progress(p, s))
+            idlix.progress_callback = progress_update
+            self.root.after(0, lambda: self.show_progress("Downloading episode..."))
+            
+            # === DOWNLOAD: Use unified logic ===
+            result = DownloadManager.execute_download(
+                idlix, video_data, resolution_id, subtitle_id, subtitle_mode
+            )
+            
+            self.active_helper = None  # Clear active helper
+            # Hide progress bar
+            self.root.after(0, self.hide_progress)
+        
+        threading.Thread(target=task, daemon=True).start()
+
     def process_movie(self, url: str, mode: str):
         """Process movie for play/download"""
         def task():
-            idlix = self.idlix
+            idlix = IdlixHelper()  # Create new instance for clean state
+            idlix.cancel_flag = False
+            self.active_helper = idlix  # Register for cancel button
+            self.cancel_requested = False  # Reset cancel flag
             
-            # Get video data
-            video_data = retry(idlix.get_video_data, url)
-            if not video_data.get("status"):
-                logger.error("Error getting video data")
+            # === PREPARE: Get all metadata ===
+            result = DownloadManager.prepare_movie_download(idlix, url)
+            if not result:
                 return
-            logger.info(f"📽️ {video_data['video_name']}")
             
-            # Get embed URL
-            embed = retry(idlix.get_embed_url)
-            if not embed.get("status"):
-                logger.error("Error getting embed URL")
-                return
-            logger.success("Embed URL obtained")
+            video_data, embed, m3u8 = result
             
-            # Get M3U8 URL
-            m3u8 = retry(idlix.get_m3u8_url)
-            if not m3u8.get("status"):
-                logger.error("Error getting M3U8 URL")
-                return
-            logger.success("M3U8 URL obtained")
-            
-            # Select resolution
+            # === DIALOGS: Ask user for preferences ===
+            resolution_id = None
             if m3u8.get("is_variant_playlist"):
                 selected_id = None
                 def ask():
@@ -938,35 +1063,49 @@ class IdlixGUI:
                 while selected_id is None:
                     time.sleep(0.1)
                 
+                resolution_id = selected_id
                 for v in m3u8["variant_playlist"]:
-                    if str(v["id"]) == selected_id:
+                    if str(v["id"]) == resolution_id:
                         idlix.set_m3u8_url(v["uri"])
                         logger.success(f"Resolution: {v['resolution']}")
                         break
             
-            # Select subtitle
+            subtitle_id = None
             subtitle_file = None
+            subtitle_mode = 'separate'
+            
             subs = idlix.get_available_subtitles()
             if subs.get("status") and subs.get("subtitles"):
-                subtitle_id = None
+                sub_holder = {"value": None, "done": False}
                 def ask_sub():
-                    nonlocal subtitle_id
-                    subtitle_id = self.select_subtitle_dialog(subs["subtitles"])
+                    sub_holder["value"] = self.select_subtitle_dialog(subs["subtitles"])
+                    sub_holder["done"] = True
                 self.root.after(0, ask_sub)
-                while subtitle_id is None:
+                while not sub_holder["done"]:
                     time.sleep(0.1)
                 
-                if subtitle_id:
+                subtitle_id = sub_holder["value"] if sub_holder["value"] else ""  # "" = no subtitle
+                
+                # Ask for subtitle mode if subtitle selected
+                if subtitle_id and subtitle_id != "":
+                    mode_holder = {"value": None, "done": False}
+                    def ask_mode():
+                        mode_holder["value"] = self.select_subtitle_mode_dialog()
+                        mode_holder["done"] = True
+                    self.root.after(0, ask_mode)
+                    while not mode_holder["done"]:
+                        time.sleep(0.1)
+                    subtitle_mode = mode_holder["value"]
+            
+            # === PLAY or DOWNLOAD ===
+            if mode == "play":
+                # For play: download subtitle separately for VLC
+                if subtitle_id and subtitle_id != "":
                     sub_result = idlix.download_selected_subtitle(subtitle_id)
                     if sub_result.get("status"):
                         subtitle_file = sub_result.get("subtitle")
                         logger.success(f"Subtitle: {sub_result.get('label')}")
-                else:
-                    # User chose "No Subtitle"
-                    idlix.set_skip_subtitle(True)
-            
-            # Play or download
-            if mode == "play":
+                
                 if vlc:
                     logger.info("Opening VLC Player...")
                     self.root.after(0, lambda: VLCPlayerWindow(
@@ -975,24 +1114,19 @@ class IdlixGUI:
                 else:
                     self.start_ffplay(idlix.m3u8_url, subtitle_file)
             else:
-                # Ask for subtitle mode if subtitle selected
-                if subtitle_file:
-                    sub_mode = None
-                    def ask_mode():
-                        nonlocal sub_mode
-                        sub_mode = self.select_subtitle_mode_dialog()
-                    self.root.after(0, ask_mode)
-                    while sub_mode is None:
-                        time.sleep(0.1)
-                    idlix.set_subtitle_mode(sub_mode)
-                    logger.info(f"Subtitle mode: {sub_mode}")
+                # === DOWNLOAD: Use unified logic ===
+                def progress_update(percent, status=""):
+                    self.root.after(0, lambda p=percent, s=status: self.update_progress(p, s))
+                idlix.progress_callback = progress_update
+                self.root.after(0, lambda: self.show_progress("Downloading movie..."))
                 
-                logger.info("Starting download...")
-                result = idlix.download_m3u8()
-                if result.get("status"):
-                    logger.success(f"✅ Downloaded: {video_data['video_name']}")
-                else:
-                    logger.error(f"Download failed: {result.get('message')}")
+                result = DownloadManager.execute_download(
+                    idlix, video_data, resolution_id, subtitle_id, subtitle_mode
+                )
+                
+                self.active_helper = None  # Clear active helper
+                # Hide progress bar after download
+                self.root.after(0, self.hide_progress)
         
         threading.Thread(target=task, daemon=True).start()
 
@@ -1005,38 +1139,19 @@ class IdlixGUI:
         """
         def task():
             idlix = IdlixHelper()  # New instance for episode
+            idlix.cancel_flag = False  # Reset cancel flag
+            self.active_helper = idlix  # Register for cancel button
+            self.cancel_requested = False  # Reset cancel flag
             
-            # Get episode data
-            video_data = retry(idlix.get_episode_data, url)
-            if not video_data.get("status"):
-                logger.error("Error getting episode data")
+            # === PREPARE: Get all metadata ===
+            result = DownloadManager.prepare_episode_download(idlix, url, episode_info)
+            if not result:
                 return
-            logger.info(f"📺 {video_data['video_name']}")
             
-            # Set episode metadata for organized folder structure
-            if episode_info and mode == "download":
-                idlix.set_episode_meta(
-                    series_title=episode_info.get('series_title', 'Unknown'),
-                    series_year=episode_info.get('series_year', '2025'),
-                    season_num=episode_info.get('season_num', 1),
-                    episode_num=episode_info.get('episode_num', 1)
-                )
+            video_data, embed, m3u8 = result
             
-            # Get embed URL (episode uses type=tv)
-            embed = retry(idlix.get_embed_url_episode)
-            if not embed.get("status"):
-                logger.error("Error getting embed URL")
-                return
-            logger.success("Embed URL obtained")
-            
-            # Get M3U8 URL
-            m3u8 = retry(idlix.get_m3u8_url)
-            if not m3u8.get("status"):
-                logger.error("Error getting M3U8 URL")
-                return
-            logger.success("M3U8 URL obtained")
-            
-            # Select resolution
+            # === DIALOGS: Ask user for preferences ===
+            resolution_id = None
             if m3u8.get("is_variant_playlist"):
                 selected_id = None
                 def ask():
@@ -1046,35 +1161,49 @@ class IdlixGUI:
                 while selected_id is None:
                     time.sleep(0.1)
                 
+                resolution_id = selected_id
                 for v in m3u8["variant_playlist"]:
-                    if str(v["id"]) == selected_id:
+                    if str(v["id"]) == resolution_id:
                         idlix.set_m3u8_url(v["uri"])
                         logger.success(f"Resolution: {v['resolution']}")
                         break
             
-            # Select subtitle
+            subtitle_id = None
             subtitle_file = None
+            subtitle_mode = 'separate'
+            
             subs = idlix.get_available_subtitles()
             if subs.get("status") and subs.get("subtitles"):
-                subtitle_id = None
+                sub_holder = {"value": None, "done": False}
                 def ask_sub():
-                    nonlocal subtitle_id
-                    subtitle_id = self.select_subtitle_dialog(subs["subtitles"])
+                    sub_holder["value"] = self.select_subtitle_dialog(subs["subtitles"])
+                    sub_holder["done"] = True
                 self.root.after(0, ask_sub)
-                while subtitle_id is None:
+                while not sub_holder["done"]:
                     time.sleep(0.1)
                 
-                if subtitle_id:
+                subtitle_id = sub_holder["value"] if sub_holder["value"] else ""  # "" = no subtitle
+                
+                # Ask for subtitle mode if subtitle selected
+                if subtitle_id and subtitle_id != "":
+                    mode_holder = {"value": None, "done": False}
+                    def ask_mode():
+                        mode_holder["value"] = self.select_subtitle_mode_dialog()
+                        mode_holder["done"] = True
+                    self.root.after(0, ask_mode)
+                    while not mode_holder["done"]:
+                        time.sleep(0.1)
+                    subtitle_mode = mode_holder["value"]
+            
+            # === PLAY or DOWNLOAD ===
+            if mode == "play":
+                # For play: download subtitle separately for VLC
+                if subtitle_id and subtitle_id != "":
                     sub_result = idlix.download_selected_subtitle(subtitle_id)
                     if sub_result.get("status"):
                         subtitle_file = sub_result.get("subtitle")
                         logger.success(f"Subtitle: {sub_result.get('label')}")
-                else:
-                    # User chose "No Subtitle" for episode
-                    idlix.set_skip_subtitle(True)
-            
-            # Play or download
-            if mode == "play":
+                
                 if vlc:
                     logger.info("Opening VLC Player...")
                     self.root.after(0, lambda: VLCPlayerWindow(
@@ -1083,24 +1212,19 @@ class IdlixGUI:
                 else:
                     self.start_ffplay(idlix.m3u8_url, subtitle_file)
             else:
-                # Ask for subtitle mode if subtitle selected
-                if subtitle_file:
-                    sub_mode = None
-                    def ask_mode():
-                        nonlocal sub_mode
-                        sub_mode = self.select_subtitle_mode_dialog()
-                    self.root.after(0, ask_mode)
-                    while sub_mode is None:
-                        time.sleep(0.1)
-                    idlix.set_subtitle_mode(sub_mode)
-                    logger.info(f"Subtitle mode: {sub_mode}")
+                # === DOWNLOAD: Use unified logic ===
+                def progress_update(percent, status=""):
+                    self.root.after(0, lambda p=percent, s=status: self.update_progress(p, s))
+                idlix.progress_callback = progress_update
+                self.root.after(0, lambda: self.show_progress("Downloading episode..."))
                 
-                logger.info("Starting download...")
-                result = idlix.download_m3u8()
-                if result.get("status"):
-                    logger.success(f"✅ Downloaded: {video_data['video_name']}")
-                else:
-                    logger.error(f"Download failed: {result.get('message')}")
+                result = DownloadManager.execute_download(
+                    idlix, video_data, resolution_id, subtitle_id, subtitle_mode
+                )
+                
+                self.active_helper = None  # Clear active helper
+                # Hide progress bar after download
+                self.root.after(0, self.hide_progress)
         
         threading.Thread(target=task, daemon=True).start()
 
@@ -1157,6 +1281,39 @@ class IdlixGUI:
         self.log_box.configure(state="normal")
         self.log_box.delete(1.0, tk.END)
         self.log_box.configure(state="disabled")
+    
+    def show_progress(self, title="Downloading..."):
+        """Show progress bar"""
+        self.progress_label.config(text=title)
+        self.progress_bar['value'] = 0
+        self.progress_status.config(text="0%")
+        self.cancel_btn.config(state="normal", text="❌ Cancel")
+        self.progress_frame.pack(fill="x", pady=(10, 0), before=self.log_box.master)
+    
+    def update_progress(self, percent, status=""):
+        """Update progress bar"""
+        if self.progress_frame.winfo_ismapped():
+            self.progress_bar['value'] = min(100, max(0, percent))
+            text = f"{percent:.1f}%" if status == "" else f"{percent:.1f}% - {status}"
+            self.progress_status.config(text=text)
+    
+    def hide_progress(self):
+        """Hide progress bar"""
+        self.progress_frame.pack_forget()
+        # Reset cancel button state
+        self.cancel_btn.config(state="normal", text="❌ Cancel")
+    
+    def cancel_download(self):
+        """Cancel ongoing download"""
+        self.cancel_requested = True
+        logger.warning("⚠️ Cancelling download...")
+        self.cancel_btn.config(state="disabled", text="Cancelling...")
+        
+        # Set cancel flag on active helper
+        if self.active_helper:
+            self.active_helper.cancel_flag = True
+        if hasattr(self, 'idlix') and self.idlix:
+            self.idlix.cancel_flag = True
 
 
 if __name__ == "__main__":

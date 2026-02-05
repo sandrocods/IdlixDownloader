@@ -38,6 +38,8 @@ Program mendukung Windows dan Linux.
 | Download Folder Button   | Membuka folder hasil download                           | ✔      |
 | Log Console GUI          | Log real-time dengan warna                              | ✔      |
 | Batch Download           | Download semua episode dalam satu season                | ✔      |
+| Cancel Download          | Cancel download yang sedang berjalan                    | ✔      |
+| Progress Bar             | Real-time progress untuk semua mode download            | ✔      |
 | Subtitle Mode Options    | Separate (.srt), Softcode (MKV), Hardcode (burn-in)     | ✔      |
 | Organized Folder         | Series download ke folder terorganisir                  | ✔      |
 | Plex Compatible          | Subtitle metadata dengan language code                  | ✔      |
@@ -224,14 +226,37 @@ Program akan otomatis:
 - [x] ~~Multi-subtitle selection~~ ✅
 - [x] ~~Modern dark theme UI~~ ✅
 - [x] ~~YouTube-style player~~ ✅
+- [x] ~~Download progress bar~~ ✅
+- [x] ~~Cancel download button~~ ✅
 - [ ] Search movie (GUI)
 - [ ] History (watch & download)
-- [ ] Download progress bar
 - [ ] Watchlist / Favorites
 
 ---
 
 # Changelog
+
+## 2026-02-05 — Progress Bar & Cancel Download
+
+Added:
+
+- **Real-time Progress Bar** - Progress bar berfungsi untuk semua mode download (separate, softcode, hardcode)
+- **Cancel Download Button** - Tombol cancel yang berfungsi saat download sedang berjalan
+- **Progress Tracking** - Parsing real-time dari m3u8_To_MP4 dan FFmpeg output
+
+Fixed:
+
+- **"No Subtitle" Selection Bug** - Fixed bug dimana GUI hang saat pilih "No Subtitle"
+- **Progress Bar for Separate Mode** - Fixed regex untuk parse format "segment set: |###| X%"
+- **Batch Download Cancel** - Cancel sekarang berfungsi di tengah batch download season
+
+Updated:
+
+- DownloadManager sebagai unified business logic untuk GUI & CLI
+- Active helper tracking untuk cancel yang lebih responsive
+- Cleanup partial files saat download di-cancel
+
+---
 
 ## 2026-02-04 — TV Series, Subtitle Modes & Organized Download
 

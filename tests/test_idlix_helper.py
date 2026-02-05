@@ -12,10 +12,17 @@ class TestIdlixHelper(unittest.TestCase):
     def test_get_safe_title(self):
         """Verify sanitization of filenames"""
         safe = self.helper.get_safe_title()
-        # Should remove : and & (and others) and replace spaces with _
+        # Should remove : and & (and other invalid filename chars)
+        # Spaces are kept (not replaced with underscores)
         self.assertNotIn(":", safe)
         self.assertNotIn("&", safe)
-        self.assertEqual(safe, "Test_Movie_Subtitle__More!")
+        self.assertNotIn("?", safe)
+        self.assertNotIn('"', safe)
+        self.assertNotIn("<", safe)
+        self.assertNotIn(">", safe)
+        self.assertNotIn("|", safe)
+        # Expected: removes colons, ampersands, keeps spaces
+        self.assertEqual(safe, "Test Movie Subtitle  More!")
 
     def test_set_m3u8_url_relative(self):
         """Verify relative URL expansion"""

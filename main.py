@@ -1,4 +1,5 @@
 from src.idlixHelper import IdlixHelper, logger
+from src.download_manager import DownloadManager
 from prettytable import PrettyTable
 import inquirer
 import time
@@ -52,12 +53,8 @@ def select_subtitle(idlix_helper):
         logger.warning("No subtitles found")
         return None
     
-    if len(subtitles) == 1:
-        logger.info(f"Found 1 subtitle: {subtitles[0]['label']}")
-        return subtitles[0]['id']
-    
-    # Multiple subtitles - let user choose
-    logger.info(f"Found {len(subtitles)} subtitles")
+    # Always let user choose (even with 1 subtitle)
+    logger.info(f"Found {len(subtitles)} subtitle(s)")
     
     choices = [f"{s['id']} - {s['label']}" for s in subtitles]
     choices.append("No Subtitle")
@@ -143,107 +140,75 @@ def process_content(idlix_helper, url: str, mode: str, is_episode: bool = False,
         preset_sub_mode: Pre-selected subtitle mode for batch downloads
     """
     
-    # 1. Get video data
+    # === PREPARE: Get all metadata ===
+    # Note: prepare methods already have retry logic internally, don't wrap with retry()
     if is_episode:
-        video_data = retry(idlix_helper.get_episode_data, url)
+        result = DownloadManager.prepare_episode_download(idlix_helper, url, episode_info)
     else:
-        video_data = retry(idlix_helper.get_video_data, url)
+        result = DownloadManager.prepare_movie_download(idlix_helper, url)
     
-    if not video_data.get("status"):
-        logger.error("Error getting video data")
+    if not result:
+        logger.error("Failed to prepare content")
         return False
-
-    logger.info(f"📽️  {video_data['video_name']}")
     
-    # Set episode metadata for organized folder structure
-    if episode_info and mode == "download":
-        idlix_helper.set_episode_meta(
-            series_title=episode_info.get('series_title', 'Unknown'),
-            series_year=episode_info.get('series_year', '2025'),
-            season_num=episode_info.get('season_num', 1),
-            episode_num=episode_info.get('episode_num', 1)
-        )
+    video_data, embed, m3u8 = result
 
-    # 2. Get embed URL
-    if is_episode:
-        embed = retry(idlix_helper.get_embed_url_episode)
-    else:
-        embed = retry(idlix_helper.get_embed_url)
-    
-    if not embed.get("status"):
-        logger.error("Error getting embed URL")
-        return False
-
-    logger.success(f"Embed URL obtained")
-
-    # 3. Get M3U8 URL
-    m3u8 = retry(idlix_helper.get_m3u8_url)
-    if not m3u8.get("status"):
-        logger.error("Error getting M3U8 URL")
-        return False
-
-    logger.success(f"M3U8 URL obtained")
-
-    # 4. Select resolution (use preset if provided)
+    # === DIALOGS: Select resolution (use preset if provided) ===
+    resolution_id = None
     if preset_resolution and m3u8.get("is_variant_playlist"):
         for v in m3u8["variant_playlist"]:
             if str(v["id"]) == preset_resolution:
                 idlix_helper.set_m3u8_url(v["uri"])
                 logger.info(f"Using preset resolution: {v['resolution']}")
+                resolution_id = preset_resolution
                 break
     else:
         select_resolution(idlix_helper, m3u8)
 
-    # 5. Handle subtitle selection (use preset if provided)
+    # === DIALOGS: Handle subtitle selection (use preset if provided) ===
+    subtitle_id = None
+    subtitle_mode = 'separate'
+    
     if preset_subtitle is not None:
-        subtitle_id = preset_subtitle if preset_subtitle != "" else None
+        subtitle_id = preset_subtitle if preset_subtitle != "" else ""
         if subtitle_id:
             logger.info(f"Using preset subtitle")
         else:
             logger.info(f"Subtitle skipped (preset: no subtitle)")
-            idlix_helper.set_skip_subtitle(True)
     else:
         subtitle_id = select_subtitle(idlix_helper)
         if subtitle_id is None:
-            idlix_helper.set_skip_subtitle(True)
+            subtitle_id = ""  # Convert None to ""
     
-    # 6. Play or Download
+    # Ask for subtitle mode if needed
+    if subtitle_id and subtitle_id != "":
+        if preset_sub_mode:
+            subtitle_mode = preset_sub_mode
+            logger.info(f"Using preset subtitle mode: {subtitle_mode}")
+        else:
+            subtitle_mode = select_subtitle_mode()
+    
+    # === PLAY or DOWNLOAD ===
     if mode == "play":
-        if subtitle_id:
+        # For play: download subtitle separately
+        if subtitle_id and subtitle_id != "":
             sub_result = idlix_helper.download_selected_subtitle(subtitle_id)
             if sub_result.get("status"):
                 logger.success(f"Subtitle loaded: {sub_result.get('label')}")
         
         logger.info(f"▶️  Playing {video_data['video_name']} ...")
-
-        # Run VLC directly on main thread (Tkinter requirement)
         result = idlix_helper.play_m3u8()
         if result.get("status"):
             logger.success("Playback finished")
         else:
             logger.error(f"Error playing: {result.get('message')}")
     else:
-        # Download mode - only ask for subtitle mode if subtitle selected
-        if subtitle_id:
-            # Use preset mode if provided, otherwise ask
-            if preset_sub_mode:
-                sub_mode = preset_sub_mode
-                logger.info(f"Using preset subtitle mode: {sub_mode}")
-            else:
-                sub_mode = select_subtitle_mode()
-            
-            idlix_helper.set_subtitle_mode(sub_mode)
-            
-            # Only download subtitle now
-            sub_result = idlix_helper.download_selected_subtitle(subtitle_id)
-            if sub_result.get("status"):
-                logger.success(f"Subtitle downloaded: {sub_result.get('label')}")
+        # === DOWNLOAD: Use unified logic ===
+        result = DownloadManager.execute_download(
+            idlix_helper, video_data, resolution_id, subtitle_id, subtitle_mode
+        )
         
-        result = idlix_helper.download_m3u8()
-        if result.get("status"):
-            logger.success(f"✅ Downloaded: {video_data['video_name']}")
-        else:
-            logger.error(f"Download failed: {result.get('message')}")
+        if not result.get("status"):
             return False
     
     return True
@@ -254,9 +219,36 @@ def process_series(idlix_helper, url: str, mode: str):
     
     # Detect if URL is episode or series page
     if '/episode/' in url:
-        # Direct episode URL
+        # Direct episode URL - extract episode info from URL for folder structure
         logger.info("Processing single episode...")
-        return process_content(idlix_helper, url, mode, is_episode=True)
+        import re
+        episode_info = None
+        
+        if mode == "download":
+            # First, get episode data to extract series info from page
+            video_data = retry(idlix_helper.get_episode_data, url)
+            if video_data.get("status") and video_data.get('series_info'):
+                series_info = video_data['series_info']
+                
+                # Extract season/episode numbers from URL
+                match = re.search(r'/episode/(.+)-season-(\d+)-episode-(\d+)', url)
+                if match:
+                    season_num = int(match.group(2))
+                    episode_num = int(match.group(3))
+                    
+                    # Use series info from page (has correct title + year)
+                    series_title = series_info.get('series_title', match.group(1).replace('-', ' ').title())
+                    series_year = series_info.get('series_year', '2025')
+                    
+                    episode_info = {
+                        'series_title': series_title,
+                        'series_year': series_year,
+                        'season_num': season_num,
+                        'episode_num': episode_num
+                    }
+                    logger.info(f"📁 Detected: {series_title} ({series_year}) S{season_num:02d}E{episode_num:02d}")
+        
+        return process_content(idlix_helper, url, mode, is_episode=True, episode_info=episode_info)
     
     # Get series info
     logger.info("Loading series information...")
@@ -669,7 +661,34 @@ def main():
             
             # Detect content type
             if '/episode/' in url:
-                process_content(idlix, url, mode, is_episode=True)
+                # Try to extract episode info from URL for folder structure
+                import re
+                episode_info = None
+                if mode == "download":
+                    # First, get episode data to extract series info from page
+                    video_data = retry(idlix.get_episode_data, url)
+                    if video_data.get("status") and video_data.get('series_info'):
+                        series_info = video_data['series_info']
+                        
+                        # Extract season/episode numbers from URL
+                        match = re.search(r'/episode/(.+)-season-(\d+)-episode-(\d+)', url)
+                        if match:
+                            season_num = int(match.group(2))
+                            episode_num = int(match.group(3))
+                            
+                            # Use series info from page (has correct title + year)
+                            series_title = series_info.get('series_title', match.group(1).replace('-', ' ').title())
+                            series_year = series_info.get('series_year', '2025')
+                            
+                            episode_info = {
+                                'series_title': series_title,
+                                'series_year': series_year,
+                                'season_num': season_num,
+                                'episode_num': episode_num
+                            }
+                            logger.info(f"📁 Detected: {series_title} ({series_year}) S{season_num:02d}E{episode_num:02d}")
+                
+                process_content(idlix, url, mode, is_episode=True, episode_info=episode_info)
             elif '/tvseries/' in url:
                 process_series(idlix, url, mode)
             else:

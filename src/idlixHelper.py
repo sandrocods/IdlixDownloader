@@ -44,6 +44,8 @@ class IdlixHelper:
         self.content_type = None  # 'movie' or 'episode'
         self.series_info = None  # Series metadata
         self.episode_meta = None  # Episode metadata for organized downloads
+        self.progress_callback = None  # Callback for GUI progress updates
+        self.cancel_flag = False  # Flag to cancel download
         self.request = cloudscraper.create_scraper(
             browser={
                 'browser': 'chrome',
@@ -313,12 +315,52 @@ class IdlixHelper:
                 poster_img = bs.find('img', {'itemprop': 'image'})
                 self.poster = poster_img.get('src') if poster_img else None
                 
+                # Extract series info from episode page (for organized folder)
+                series_title = None
+                series_year = None
+                
+                # Try to get series title from breadcrumb or link
+                breadcrumb = bs.find('div', {'class': 'sgeneros'})
+                if breadcrumb:
+                    series_link = breadcrumb.find('a', href=re.compile(r'/tvseries/'))
+                    if series_link:
+                        series_title = series_link.text.strip()
+                
+                # If not found, try alternative: parse from page title
+                if not series_title:
+                    # Episode title format: "Series Name: Season X Episode Y" or "Series Name (Year): Season X Episode Y"
+                    match = re.match(r'^(.+?)(?:\s*\(\d{4}\))?\s*:\s*\d+x\d+', self.video_name)
+                    if match:
+                        series_title = match.group(1).strip()
+                
+                # Get year from page (try multiple methods)
+                # Method 1: From date meta tag
+                date_meta = bs.find('meta', {'property': 'og:updated_time'}) or bs.find('span', {'class': 'date'})
+                if date_meta:
+                    year_text = date_meta.get('content') if date_meta.name == 'meta' else date_meta.text
+                    year_match = re.search(r'(\d{4})', year_text)
+                    if year_match:
+                        series_year = year_match.group(1)
+                
+                # Method 2: From episode title (if format has year)
+                if not series_year:
+                    year_match = re.search(r'\((\d{4})\)', self.video_name)
+                    if year_match:
+                        series_year = year_match.group(1)
+                
+                # Store series metadata for potential use
+                self.episode_series_info = {
+                    'series_title': series_title,
+                    'series_year': series_year or '2025'  # Fallback to current year
+                }
+                
                 return {
                     'status': True,
                     'video_id': self.video_id,
                     'video_name': self.video_name,
                     'poster': self.poster,
-                    'content_type': 'episode'
+                    'content_type': 'episode',
+                    'series_info': self.episode_series_info
                 }
             else:
                 return {'status': False, 'message': 'Failed to get episode data'}
@@ -491,6 +533,13 @@ class IdlixHelper:
 
     def download_m3u8(self):
         try:
+            # Check cancel flag
+            if self.cancel_flag:
+                return {
+                    'status': False,
+                    'message': 'Download cancelled by user'
+                }
+            
             if not self.m3u8_url:
                 return {
                     'status': False,
@@ -580,16 +629,108 @@ class IdlixHelper:
             
             # Standard download with m3u8_To_MP4
             logger.info(f"Starting download for {self.video_name}...")
-            m3u8_To_MP4.multithread_download(
-                m3u8_uri=self.m3u8_url,
-                max_num_workers=10,
-                mp4_file_name=output_name,
-                mp4_file_dir=output_dir + '/',
-                tmpdir=tmp_dir + '/'
-            )
+            
+            # Redirect stdout/stderr to capture m3u8_To_MP4 logs with real-time progress
+            import sys
+            from io import StringIO
+            
+            old_stdout = sys.stdout
+            old_stderr = sys.stderr
+            
+            # Custom exception for cancellation
+            class DownloadCancelled(Exception):
+                pass
+            
+            # Reference to self for cancel flag check
+            helper_self = self
+            
+            # Custom stream that parses progress in real-time
+            class ProgressCapture:
+                def __init__(self, original_stream, progress_callback=None):
+                    self.original = original_stream
+                    self.progress_callback = progress_callback
+                    self.buffer = ""
+                
+                def write(self, data):
+                    # Check cancel flag - raise exception to interrupt download
+                    if helper_self.cancel_flag:
+                        raise DownloadCancelled("Download cancelled by user")
+                    
+                    # Don't print to terminal for segment progress (too noisy)
+                    if "segment set:" not in data:
+                        self.original.write(data)
+                        self.original.flush()
+                    
+                    # Buffer data for line-by-line parsing
+                    self.buffer += data
+                    
+                    # Process complete lines (split on \r for real-time progress updates)
+                    while '\n' in self.buffer or '\r' in self.buffer:
+                        # Split on either \n or \r
+                        if '\r' in self.buffer and ('\n' not in self.buffer or self.buffer.index('\r') < self.buffer.index('\n')):
+                            line, self.buffer = self.buffer.split('\r', 1)
+                        else:
+                            line, self.buffer = self.buffer.split('\n', 1)
+                        
+                        line = line.strip()
+                        if not line:
+                            continue
+                        
+                        # Parse progress from m3u8_To_MP4 format: "segment set: |###---| X.X% download"
+                        if self.progress_callback and "segment set:" in line:
+                            try:
+                                match = re.search(r'([\d.]+)%', line)
+                                if match:
+                                    percent = float(match.group(1))
+                                    self.progress_callback(percent, f"{percent:.1f}%")
+                            except:
+                                pass
+                        # Log non-progress lines (skip segment set lines)
+                        elif "segment set:" not in line:
+                            if line:
+                                logger.info(line)
+                
+                def flush(self):
+                    self.original.flush()
+            
+            sys.stdout = ProgressCapture(old_stdout, self.progress_callback)
+            sys.stderr = ProgressCapture(old_stderr, self.progress_callback)
+            
+            download_cancelled = False
+            try:
+                # Check cancel before starting download
+                if self.cancel_flag:
+                    shutil.rmtree(tmp_dir, ignore_errors=True)
+                    return {'status': False, 'message': 'Download cancelled by user'}
+                
+                m3u8_To_MP4.multithread_download(
+                    m3u8_uri=self.m3u8_url,
+                    max_num_workers=10,
+                    mp4_file_name=output_name,
+                    mp4_file_dir=output_dir + '/',
+                    tmpdir=tmp_dir + '/'
+                )
+            except DownloadCancelled:
+                download_cancelled = True
+                logger.warning("Download cancelled by user")
+            finally:
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
             
             # Cleanup tmp folder
             shutil.rmtree(tmp_dir, ignore_errors=True)
+            
+            # Check if cancelled
+            if download_cancelled or self.cancel_flag:
+                # Clean up partial file
+                partial_file = os.path.join(output_dir, output_name + '.mp4')
+                if os.path.exists(partial_file):
+                    try:
+                        os.remove(partial_file)
+                        logger.info("Partial download file removed")
+                    except:
+                        pass
+                return {'status': False, 'message': 'Download cancelled by user'}
             
             final_path = os.path.join(output_dir, output_name + '.mp4')
             return {
@@ -598,6 +739,9 @@ class IdlixHelper:
                 'path': final_path
             }
         except Exception as error_download_m3u8:
+            # Check if it was a cancellation
+            if self.cancel_flag or 'cancelled' in str(error_download_m3u8).lower():
+                return {'status': False, 'message': 'Download cancelled by user'}
             return {
                 'status': False,
                 'message': str(error_download_m3u8)
@@ -703,16 +847,94 @@ class IdlixHelper:
             logger.info(f"FFmpeg {'hardcoding' if mode == 'hardcode' else 'embedding'} subtitle...")
             logger.info(f"This may take a while for long videos...")
             
-            # Run FFmpeg with progress
+            # Run FFmpeg with progress tracking
             process = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                universal_newlines=True
             )
             
-            # Wait for completion
-            stdout, stderr = process.communicate()
+            # Parse FFmpeg output for progress with custom progress bar
+            try:
+                from tqdm import tqdm
+                use_tqdm = True
+            except ImportError:
+                use_tqdm = False
+            
+            duration = None
+            pbar = None
+            
+            for line in iter(process.stderr.readline, ''):
+                # Check cancel flag periodically
+                if self.cancel_flag:
+                    process.terminate()
+                    logger.warning("FFmpeg download cancelled")
+                    break
+                
+                # Extract total duration
+                if 'Duration:' in line and not duration:
+                    import re
+                    match = re.search(r'Duration: (\d{2}):(\d{2}):(\d{2})\.(\d{2})', line)
+                    if match:
+                        h, m, s, cs = map(int, match.groups())
+                        duration = h * 3600 + m * 60 + s + cs / 100
+                        
+                        # Initialize progress bar with custom format
+                        if use_tqdm and duration > 0:
+                            pbar = tqdm(
+                                total=100,
+                                desc="FFmpeg Progress",
+                                unit="%",
+                                bar_format="{desc}: |{bar}| {n:.1f}% [{elapsed}<{remaining}]",
+                                ncols=80,
+                                ascii=" #"
+                            )
+                
+                # Extract current time and calculate percentage
+                if 'time=' in line and duration:
+                    match = re.search(r'time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})', line)
+                    if match:
+                        h, m, s, cs = map(int, match.groups())
+                        current_time = h * 3600 + m * 60 + s + cs / 100
+                        percentage = min(100, (current_time / duration) * 100)
+                        
+                        # Callback for GUI
+                        if self.progress_callback:
+                            self.progress_callback(percentage, "FFmpeg encoding")
+                        
+                        if pbar:
+                            # Update progress bar
+                            pbar.n = percentage
+                            pbar.refresh()
+                        else:
+                            # Fallback to simple progress bar
+                            bar_length = 50
+                            filled = int(bar_length * percentage / 100)
+                            bar = '#' * filled + '-' * (bar_length - filled)
+                            print(f'\rFFmpeg Progress: |{bar}| {percentage:.1f}%', end='', flush=True)
+            
+            if pbar:
+                pbar.close()
+            else:
+                print()  # New line after progress
+            
+            process.wait()
+            
+            # Check if cancelled
+            if self.cancel_flag:
+                # Clean up partial file
+                if os.path.exists(output_file):
+                    try:
+                        os.remove(output_file)
+                        logger.info("Partial download file removed")
+                    except:
+                        pass
+                return {
+                    'status': False,
+                    'message': 'Download cancelled by user'
+                }
             
             if process.returncode == 0:
                 logger.success(f"FFmpeg download complete: {output_file}")
@@ -722,7 +944,8 @@ class IdlixHelper:
                     'path': output_file
                 }
             else:
-                # Log more detailed error
+                # Read remaining stderr for error
+                stderr = process.stderr.read()
                 error_lines = stderr.strip().split('\n')[-5:]  # Last 5 lines
                 error_msg = '\n'.join(error_lines)
                 logger.error(f"FFmpeg error:\n{error_msg}")
