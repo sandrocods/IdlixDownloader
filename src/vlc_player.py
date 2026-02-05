@@ -40,6 +40,14 @@ class ModernVLCPlayer(tk.Toplevel):
         self.configure(bg=self.BG_COLOR)
         self.minsize(800, 500)
         
+        # Center window on screen
+        self.update_idletasks()
+        width = 1100
+        height = 650
+        x = (self.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.winfo_screenheight() // 2) - (height // 2)
+        self.geometry(f'{width}x{height}+{x}+{y}')
+        
         self.idlix = idlix
         self.m3u8_url = m3u8_url
         self.subtitle = subtitle
@@ -509,6 +517,14 @@ class ModernVLCPlayer(tk.Toplevel):
         # Mark as closed to stop all after callbacks
         self._closed = True
         
+        # Stop player FIRST (before canceling callbacks) to prevent hanging
+        if self.player:
+            try:
+                # Stop playback immediately (non-blocking)
+                self.player.stop()
+            except:
+                pass
+        
         # Cancel all pending after callbacks
         for after_id in [self.update_ui_id, self.animate_loading_id, self.hide_controls_id, self.log_state_id]:
             if after_id:
@@ -517,9 +533,19 @@ class ModernVLCPlayer(tk.Toplevel):
                 except:
                     pass
         
+        # Release player resources in background thread to avoid blocking UI
         if self.player:
-            self.player.stop()
-            self.player.release()
+            try:
+                import threading
+                def release_player():
+                    try:
+                        self.player.release()
+                    except:
+                        pass
+                release_thread = threading.Thread(target=release_player, daemon=True)
+                release_thread.start()
+            except:
+                pass
         
         # Cleanup subtitle files
         if self.subtitle and os.path.exists(self.subtitle):

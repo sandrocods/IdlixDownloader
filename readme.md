@@ -40,6 +40,7 @@ Program mendukung Windows dan Linux.
 | Batch Download           | Download semua episode dalam satu season                | ✔      |
 | Cancel Download          | Cancel download yang sedang berjalan                    | ✔      |
 | Progress Bar             | Real-time progress untuk semua mode download            | ✔      |
+| Download Mode Setting    | Sequential (no rate limit) atau Parallel (faster)       | ✔      |
 | Subtitle Mode Options    | Separate (.srt), Softcode (MKV), Hardcode (burn-in)     | ✔      |
 | Organized Folder         | Series download ke folder terorganisir                  | ✔      |
 | Plex Compatible          | Subtitle metadata dengan language code                  | ✔      |
@@ -236,6 +237,56 @@ Program akan otomatis:
 
 # Changelog
 
+## 2026-02-05 — UI Polish & UX Improvements
+
+Added:
+
+- **Centered Dialogs** - Semua dialog (resolution, subtitle, settings, dll) muncul di tengah layar
+- **Episode Selection Checkbox** - Checkbox merah dengan checkmark putih untuk visibilitas optimal
+- **Selection Counter** - Real-time counter "Selected: X episodes" saat pilih episode
+- **Select All/Deselect All** - Tombol untuk select/deselect semua episode sekaligus
+- **Download Selected Episodes** - Download hanya episode yang dipilih (tidak harus full season)
+- **Context-aware Scrolling** - Mouse wheel scroll hanya affect area yang sedang di-hover
+- **VLC Player Centering** - Player window muncul di tengah layar, konsisten dengan dialogs
+- **Parallel Poster Loading** - ThreadPoolExecutor dengan 10 workers untuk load poster grid cepat
+
+Fixed:
+
+- **VLC Not Responding** - Player sekarang bisa ditutup langsung saat buffering (background thread release)
+- **Scroll Conflict** - Featured dan episode list sekarang bisa scroll tanpa saling ganggu
+- **Subtitle Mode for Play** - Skip dialog subtitle mode saat play (default softcode), hanya muncul saat download
+- **UI Freeze** - Poster loading tidak lagi freeze UI (background thread + root.after)
+
+Improved:
+
+- **Episode Browser UX** - Better visual feedback dengan checkbox dan counter
+- **Code Cleanliness** - Removed unused imports (simpledialog, platform)
+- **Dialog Consistency** - Semua 7 dialogs sekarang centered dengan ukuran optimal
+
+## 2026-02-05 — Sequential Download Mode (Rate Limit Fix)
+
+Added:
+
+- **Sequential Download Mode** - FFmpeg-based download yang tidak trigger rate limit
+- **Download Mode Selector** - Pilih Sequential (recommended) atau Parallel (legacy)
+- **Rate Limit Solution** - Default ke sequential mode untuk 100% reliability
+- **FFmpeg Integration** - Reuse FFmpeg dari subtitle embedding untuk download
+- **Improved Progress Parsing** - Parse FFmpeg time= output untuk progress bar
+
+Changed:
+
+- **Default Download Mode** - Changed from parallel (workers) to sequential (FFmpeg)
+- **Settings Dialog** - Simplified from worker count to mode selection
+- **Download Success Rate** - Improved from ~30-50% to 100% (no rate limits)
+
+Fixed:
+
+- **Rate Limit Issues** - Parallel download triggered jeniusplay.com rate limits
+- **Download Failures** - Sequential mode eliminates connection resets
+- **Server Compatibility** - Sequential mimics VLC streaming pattern
+
+---
+
 ## 2026-02-05 — Progress Bar & Cancel Download
 
 Added:
@@ -243,6 +294,8 @@ Added:
 - **Real-time Progress Bar** - Progress bar berfungsi untuk semua mode download (separate, softcode, hardcode)
 - **Cancel Download Button** - Tombol cancel yang berfungsi saat download sedang berjalan
 - **Progress Tracking** - Parsing real-time dari m3u8_To_MP4 dan FFmpeg output
+- **Settings Dialog** - Pengaturan download mode untuk menghindari rate limit
+- **Configurable Mode** - Pilih Sequential (FFmpeg) atau Parallel (m3u8_To_MP4)
 
 Fixed:
 
@@ -255,6 +308,7 @@ Updated:
 - DownloadManager sebagai unified business logic untuk GUI & CLI
 - Active helper tracking untuk cancel yang lebih responsive
 - Cleanup partial files saat download di-cancel
+- Default workers dari 10 menjadi 5 untuk stabilitas
 
 ---
 

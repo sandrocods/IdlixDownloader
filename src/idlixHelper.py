@@ -46,6 +46,8 @@ class IdlixHelper:
         self.episode_meta = None  # Episode metadata for organized downloads
         self.progress_callback = None  # Callback for GUI progress updates
         self.cancel_flag = False  # Flag to cancel download
+        self.download_mode = 'sequential'  # 'sequential' (FFmpeg, no rate limit) or 'parallel' (m3u8_To_MP4, faster but may fail)
+        self.max_workers = 5  # Download workers (only used in parallel mode)
         self.request = cloudscraper.create_scraper(
             browser={
                 'browser': 'chrome',
@@ -627,6 +629,172 @@ class IdlixHelper:
                 else:
                     logger.warning(f"FFmpeg failed: {result.get('message')}. Falling back to standard download...")
             
+            # Route to download mode
+            if self.download_mode == 'sequential':
+                # Sequential download with FFmpeg (no rate limit)
+                logger.info("📥 Using sequential download (FFmpeg - no rate limit)")
+                return self._download_m3u8_sequential(output_dir, output_name, subtitle_path, tmp_dir)
+            else:
+                # Parallel download with m3u8_To_MP4 (legacy, may trigger rate limit)
+                logger.warning("⚠️  Using parallel download (may trigger rate limit)")
+                return self._download_m3u8_parallel(output_dir, output_name, subtitle_path, tmp_dir)
+        except Exception as error_download_m3u8:
+            # Check if it was a cancellation
+            if self.cancel_flag or 'cancelled' in str(error_download_m3u8).lower():
+                return {'status': False, 'message': 'Download cancelled by user'}
+            return {
+                'status': False,
+                'message': str(error_download_m3u8)
+            }
+
+    def _download_m3u8_sequential(self, output_dir, output_name, subtitle_path, tmp_dir):
+        """Download using FFmpeg sequential mode (no rate limit)"""
+        try:
+            user_agent = self.request.headers.get("User-Agent", "Mozilla/5.0")
+            referer = self.BASE_STATIC_HEADERS.get("Referer", "")
+            
+            # Build headers string for FFmpeg
+            headers = f"Referer: {referer}\r\nUser-Agent: {user_agent}\r\n"
+            
+            # Add cookies if any
+            cookies = self.request.cookies.get_dict()
+            if cookies:
+                cookie_str = "; ".join([f"{k}={v}" for k, v in cookies.items()])
+                headers += f"Cookie: {cookie_str}\r\n"
+            
+            # Output file (MP4 with subtitle separate, or without subtitle)
+            output_file = os.path.join(output_dir, output_name + '.mp4')
+            
+            command = [
+                'ffmpeg', '-y',
+                '-protocol_whitelist', 'file,http,https,tcp,tls,crypto',
+                '-headers', headers,
+                '-allowed_extensions', 'ALL',
+                '-allowed_segment_extensions', 'ALL',
+                '-extension_picky', '0',
+                '-f', 'hls',
+                '-i', self.m3u8_url,
+                '-c:v', 'copy',  # No video re-encode (fast)
+                '-c:a', 'copy',  # No audio re-encode
+                output_file
+            ]
+            
+            logger.info(f"Starting FFmpeg sequential download...")
+            logger.info(f"Output: {output_file}")
+            
+            # Run FFmpeg with progress tracking
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                universal_newlines=True
+            )
+            
+            # Parse FFmpeg output for progress
+            import re
+            import time as time_module
+            duration = None
+            start_time = time_module.time()
+            
+            for line in iter(process.stderr.readline, ''):
+                # Check cancel flag periodically
+                if self.cancel_flag:
+                    process.terminate()
+                    logger.warning("FFmpeg download cancelled")
+                    # Clean up partial file
+                    if os.path.exists(output_file):
+                        try:
+                            os.remove(output_file)
+                            logger.info("Partial download file removed")
+                        except:
+                            pass
+                    # Cleanup tmp
+                    shutil.rmtree(tmp_dir, ignore_errors=True)
+                    return {'status': False, 'message': 'Download cancelled by user'}
+                
+                # Extract total duration
+                if 'Duration:' in line and not duration:
+                    match = re.search(r'Duration: (\d{2}):(\d{2}):(\d{2})\.(\d{2})', line)
+                    if match:
+                        h, m, s, cs = map(int, match.groups())
+                        duration = h * 3600 + m * 60 + s + cs / 100
+                        logger.info(f"Video duration: {h:02d}:{m:02d}:{s:02d}")
+                
+                # Extract current time and calculate percentage
+                if 'time=' in line and duration and duration > 0:
+                    match = re.search(r'time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})', line)
+                    if match:
+                        h, m, s, cs = map(int, match.groups())
+                        current_time = h * 3600 + m * 60 + s + cs / 100
+                        percentage = min(100, (current_time / duration) * 100)
+                        
+                        # Callback for GUI
+                        if self.progress_callback:
+                            self.progress_callback(percentage, "Downloading")
+                        
+                        # Enhanced progress bar for CLI
+                        if not self.progress_callback:  # Only show in CLI mode
+                            elapsed = time_module.time() - start_time
+                            if percentage > 0:
+                                total_estimated = (elapsed / percentage) * 100
+                                remaining = total_estimated - elapsed
+                            else:
+                                remaining = 0
+                            
+                            elapsed_min = int(elapsed // 60)
+                            elapsed_sec = int(elapsed % 60)
+                            remaining_min = int(remaining // 60)
+                            remaining_sec = int(remaining % 60)
+                            
+                            bar_length = 50
+                            filled = int(bar_length * percentage / 100)
+                            bar = '#' * filled + '-' * (bar_length - filled)
+                            print(f'\rFFmpeg Progress: |{bar}| {percentage:.1f}% [{elapsed_min:02d}:{elapsed_sec:02d}<{remaining_min:02d}:{remaining_sec:02d}]', end='', flush=True)
+            
+            print()  # New line after progress
+            process.wait()
+            
+            # Check if cancelled
+            if self.cancel_flag:
+                if os.path.exists(output_file):
+                    try:
+                        os.remove(output_file)
+                    except:
+                        pass
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                return {'status': False, 'message': 'Download cancelled by user'}
+            
+            # Cleanup tmp folder
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            
+            if process.returncode == 0:
+                logger.success(f"✅ Download complete: {output_file}")
+                return {
+                    'status': True,
+                    'message': 'Download success',
+                    'path': output_file
+                }
+            else:
+                # Get error from stderr
+                stderr = process.stderr.read() if process.stderr else ""
+                error_msg = stderr.strip().split('\n')[-5:] if stderr else []  # Last 5 lines
+                logger.error(f"FFmpeg error: {' '.join(error_msg)}")
+                return {
+                    'status': False,
+                    'message': f"FFmpeg error (code {process.returncode})"
+                }
+        except Exception as e:
+            if self.cancel_flag or 'cancelled' in str(e).lower():
+                return {'status': False, 'message': 'Download cancelled by user'}
+            return {
+                'status': False,
+                'message': f"Sequential download error: {str(e)}"
+            }
+
+    def _download_m3u8_parallel(self, output_dir, output_name, subtitle_path, tmp_dir):
+        """Legacy parallel download with m3u8_To_MP4 (may trigger rate limit)"""
+        try:
             # Standard download with m3u8_To_MP4
             logger.info(f"Starting download for {self.video_name}...")
             
@@ -705,7 +873,7 @@ class IdlixHelper:
                 
                 m3u8_To_MP4.multithread_download(
                     m3u8_uri=self.m3u8_url,
-                    max_num_workers=10,
+                    max_num_workers=self.max_workers,
                     mp4_file_name=output_name,
                     mp4_file_dir=output_dir + '/',
                     tmpdir=tmp_dir + '/'
